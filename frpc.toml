@@ -1,0 +1,665 @@
+# frpc.toml
+
+# 定义 frps 服务器
+serverAddr = "166.88.61.66"
+serverPort = 7000
+
+# 身份验证令牌
+auth.token = "wkc620701.0"
+
+# 启用 TLS 加密通信
+transport.tls.enable = true
+
+# 日志配置
+log.to = "/usr/local/.network_monitor/.data/logs/service.log"
+log.level = "debug"
+log.maxDays = 5
+
+# SSH 端口映射
+[[proxies]]
+name = "ssh_6003"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 22
+remotePort = 6003
+
+# 端口 44560 TCP 映射
+[[proxies]]
+name = "port_44560_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44560
+remotePort = 44560
+
+# 端口 44561 TCP 映射
+[[proxies]]
+name = "port_44561_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44561
+remotePort = 44561
+
+# 端口 44562 TCP 映射
+[[proxies]]
+name = "port_44562_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44562
+remotePort = 44562
+
+# 端口 44563 TCP 映射
+[[proxies]]
+name = "port_44563_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44563
+remotePort = 44563
+
+# 端口 44564 TCP 映射
+[[proxies]]
+name = "port_44564_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44564
+remotePort = 44564
+
+# 端口 44565 TCP 映射
+[[proxies]]
+name = "port_44565_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44565
+remotePort = 44565
+
+# 端口 44566 TCP 映射
+[[proxies]]
+name = "port_44566_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44566
+remotePort = 44566
+
+# 端口 44567 TCP 映射
+[[proxies]]
+name = "port_44567_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44567
+remotePort = 44567
+
+# 端口 44568 TCP 映射
+[[proxies]]
+name = "port_44568_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44568
+remotePort = 44568
+
+# 端口 44569 TCP 映射
+[[proxies]]
+name = "port_44569_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44569
+remotePort = 44569
+
+# 端口 44570 TCP 映射
+[[proxies]]
+name = "port_44570_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44570
+remotePort = 44570
+
+# 端口 44571 TCP 映射
+[[proxies]]
+name = "port_44571_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44571
+remotePort = 44571
+
+# 端口 44572 TCP 映射
+[[proxies]]
+name = "port_44572_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44572
+remotePort = 44572
+
+# 端口 44573 TCP 映射
+[[proxies]]
+name = "port_44573_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44573
+remotePort = 44573
+
+# 端口 44574 TCP 映射
+[[proxies]]
+name = "port_44574_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44574
+remotePort = 44574
+
+# 端口 44575 TCP 映射
+[[proxies]]
+name = "port_44575_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44575
+remotePort = 44575
+
+# 端口 44576 TCP 映射
+[[proxies]]
+name = "port_44576_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44576
+remotePort = 44576
+
+# 端口 44577 TCP 映射
+[[proxies]]
+name = "port_44577_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44577
+remotePort = 44577
+
+# 端口 44578 TCP 映射
+[[proxies]]
+name = "port_44578_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44578
+remotePort = 44578
+
+# 端口 44579 TCP 映射
+[[proxies]]
+name = "port_44579_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44579
+remotePort = 44579
+
+# 端口 44580 TCP 映射
+[[proxies]]
+name = "port_44580_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44580
+remotePort = 44580
+
+# 端口 44581 TCP 映射
+[[proxies]]
+name = "port_44581_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44581
+remotePort = 44581
+
+# 端口 44582 TCP 映射
+[[proxies]]
+name = "port_44582_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44582
+remotePort = 44582
+
+# 端口 44583 TCP 映射
+[[proxies]]
+name = "port_44583_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44583
+remotePort = 44583
+
+# 端口 44584 TCP 映射
+[[proxies]]
+name = "port_44584_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44584
+remotePort = 44584
+
+# 端口 44585 TCP 映射
+[[proxies]]
+name = "port_44585_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44585
+remotePort = 44585
+
+# 端口 44586 TCP 映射
+[[proxies]]
+name = "port_44586_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44586
+remotePort = 44586
+
+# 端口 44587 TCP 映射
+[[proxies]]
+name = "port_44587_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44587
+remotePort = 44587
+
+# 端口 44588 TCP 映射
+[[proxies]]
+name = "port_44588_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44588
+remotePort = 44588
+
+# 端口 44589 TCP 映射
+[[proxies]]
+name = "port_44589_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44589
+remotePort = 44589
+
+# 端口 44590 TCP 映射
+[[proxies]]
+name = "port_44590_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44590
+remotePort = 44590
+
+# 端口 44591 TCP 映射
+[[proxies]]
+name = "port_44591_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44591
+remotePort = 44591
+
+# 端口 44592 TCP 映射
+[[proxies]]
+name = "port_44592_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44592
+remotePort = 44592
+
+# 端口 44593 TCP 映射
+[[proxies]]
+name = "port_44593_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44593
+remotePort = 44593
+
+# 端口 44594 TCP 映射
+[[proxies]]
+name = "port_44594_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44594
+remotePort = 44594
+
+# 端口 44595 TCP 映射
+[[proxies]]
+name = "port_44595_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44595
+remotePort = 44595
+
+# 端口 44596 TCP 映射
+[[proxies]]
+name = "port_44596_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44596
+remotePort = 44596
+
+# 端口 44597 TCP 映射
+[[proxies]]
+name = "port_44597_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44597
+remotePort = 44597
+
+# 端口 44598 TCP 映射
+[[proxies]]
+name = "port_44598_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44598
+remotePort = 44598
+
+# 端口 44599 TCP 映射
+[[proxies]]
+name = "port_44599_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44599
+remotePort = 44599
+
+# 端口 44600 TCP 映射
+[[proxies]]
+name = "port_44600_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44600
+remotePort = 44600
+
+# 端口 44601 TCP 映射
+[[proxies]]
+name = "port_44601_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44601
+remotePort = 44601
+
+# 端口 44602 TCP 映射
+[[proxies]]
+name = "port_44602_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44602
+remotePort = 44602
+
+# 端口 44603 TCP 映射
+[[proxies]]
+name = "port_44603_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44603
+remotePort = 44603
+
+# 端口 44604 TCP 映射
+[[proxies]]
+name = "port_44604_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44604
+remotePort = 44604
+
+# 端口 44605 TCP 映射
+[[proxies]]
+name = "port_44605_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44605
+remotePort = 44605
+
+# 端口 44606 TCP 映射
+[[proxies]]
+name = "port_44606_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44606
+remotePort = 44606
+
+# 端口 44607 TCP 映射
+[[proxies]]
+name = "port_44607_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44607
+remotePort = 44607
+
+# 端口 44608 TCP 映射
+[[proxies]]
+name = "port_44608_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44608
+remotePort = 44608
+
+# 端口 44609 TCP 映射
+[[proxies]]
+name = "port_44609_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44609
+remotePort = 44609
+
+# 端口 44610 TCP 映射
+[[proxies]]
+name = "port_44610_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44610
+remotePort = 44610
+
+# 端口 44611 TCP 映射
+[[proxies]]
+name = "port_44611_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44611
+remotePort = 44611
+
+# 端口 44612 TCP 映射
+[[proxies]]
+name = "port_44612_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44612
+remotePort = 44612
+
+# 端口 44613 TCP 映射
+[[proxies]]
+name = "port_44613_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44613
+remotePort = 44613
+
+# 端口 44614 TCP 映射
+[[proxies]]
+name = "port_44614_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44614
+remotePort = 44614
+
+# 端口 44615 TCP 映射
+[[proxies]]
+name = "port_44615_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44615
+remotePort = 44615
+
+# 端口 44616 TCP 映射
+[[proxies]]
+name = "port_44616_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44616
+remotePort = 44616
+
+# 端口 44617 TCP 映射
+[[proxies]]
+name = "port_44617_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44617
+remotePort = 44617
+
+# 端口 44618 TCP 映射
+[[proxies]]
+name = "port_44618_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44618
+remotePort = 44618
+
+# 端口 44619 TCP 映射
+[[proxies]]
+name = "port_44619_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44619
+remotePort = 44619
+
+# 端口 44620 TCP 映射
+[[proxies]]
+name = "port_44620_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44620
+remotePort = 44620
+
+# 端口 44621 TCP 映射
+[[proxies]]
+name = "port_44621_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44621
+remotePort = 44621
+
+# 端口 44622 TCP 映射
+[[proxies]]
+name = "port_44622_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44622
+remotePort = 44622
+
+# 端口 44623 TCP 映射
+[[proxies]]
+name = "port_44623_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44623
+remotePort = 44623
+
+# 端口 44624 TCP 映射
+[[proxies]]
+name = "port_44624_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44624
+remotePort = 44624
+
+# 端口 44625 TCP 映射
+[[proxies]]
+name = "port_44625_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44625
+remotePort = 44625
+
+# 端口 44626 TCP 映射
+[[proxies]]
+name = "port_44626_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44626
+remotePort = 44626
+
+# 端口 44627 TCP 映射
+[[proxies]]
+name = "port_44627_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44627
+remotePort = 44627
+
+# 端口 44628 TCP 映射
+[[proxies]]
+name = "port_44628_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44628
+remotePort = 44628
+
+# 端口 44629 TCP 映射
+[[proxies]]
+name = "port_44629_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44629
+remotePort = 44629
+
+# 端口 44630 TCP 映射
+[[proxies]]
+name = "port_44630_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44630
+remotePort = 44630
+
+# 端口 44631 TCP 映射
+[[proxies]]
+name = "port_44631_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44631
+remotePort = 44631
+
+# 端口 44632 TCP 映射
+[[proxies]]
+name = "port_44632_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44632
+remotePort = 44632
+
+# 端口 44633 TCP 映射
+[[proxies]]
+name = "port_44633_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44633
+remotePort = 44633
+
+# 端口 44634 TCP 映射
+[[proxies]]
+name = "port_44634_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44634
+remotePort = 44634
+
+# 端口 44635 TCP 映射
+[[proxies]]
+name = "port_44635_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44635
+remotePort = 44635
+
+# 端口 44636 TCP 映射
+[[proxies]]
+name = "port_44636_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44636
+remotePort = 44636
+
+# 端口 44637 TCP 映射
+[[proxies]]
+name = "port_44637_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44637
+remotePort = 44637
+
+# 端口 44638 TCP 映射
+[[proxies]]
+name = "port_44638_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44638
+remotePort = 44638
+
+# 端口 44639 TCP 映射
+[[proxies]]
+name = "port_44639_tcp"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 44639
+remotePort = 44639
+
