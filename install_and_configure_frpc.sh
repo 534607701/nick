@@ -28,10 +28,10 @@ read -p "输入你的选择 (1 或 2): " ARCH_CHOICE
 # 根据用户选择设置下载链接
 case $ARCH_CHOICE in
     1)
-        DOWNLOAD_URL="https://xiaz.soultx.cc/download/frp_${FRP_VERSION}_linux_amd64.tar.gz"
+        DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz"
         ;;
     2)
-        DOWNLOAD_URL="https://xiaz.soultx.cc/download/frp_${FRP_VERSION}_linux_arm64.tar.gz"
+        DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_arm64.tar.gz"
         ;;
     *)
         echo "无效的选择，脚本退出。"
@@ -135,7 +135,7 @@ serverAddr = "$server_addr"
 serverPort = 7000
 
 # 身份验证令牌
-auth.token = "qxcape123."
+auth.token = "wkc620701"
 
 # 启用 TLS 加密通信
 transport.tls.enable = true
