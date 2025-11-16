@@ -1,56 +1,16 @@
-# 创建精确替换脚本
-sudo tee /tmp/exact_fix.sh > /dev/null << 'EOF'
 #!/bin/bash
 
-# 备份
-cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.exact
+# 先给文件777权限
+echo "🔧 设置文件权限..."
+sudo chmod 777 /var/lib/vastai_kaalia/send_mach_info.py
 
-# 使用Python进行精确替换
-python3 << 'PYCODE'
-import re
+# 备份原文件
+sudo cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)
 
-# 读取文件
-with open('/var/lib/vastai_kaalia/send_mach_info.py', 'r') as f:
-    content = f.read()
-
-# 完全删除原函数并插入新函数
-# 先找到原函数的确切位置
-lines = content.split('\n')
-
-# 查找原函数的开始和结束
-start_line = -1
-end_line = -1
-in_function = False
-brace_count = 0
-
-for i, line in enumerate(lines):
-    if 'def epsilon_greedyish_speedtest():' in line:
-        start_line = i
-        in_function = True
-        continue
-    
-    if in_function:
-        # 简单的括号计数来找到函数结束
-        if '{' in line:
-            brace_count += line.count('{')
-        if '}' in line:
-            brace_count -= line.count('}')
-        
-        # 当brace_count为0且遇到return时，认为是函数结束
-        if brace_count == 0 and 'return' in line and i > start_line:
-            end_line = i
-            break
-
-# 如果找不到，使用默认范围343-373
-if start_line == -1 or end_line == -1:
-    print("使用默认行号范围343-373")
-    start_line = 342  # 因为列表从0开始
-    end_line = 372
-
-print(f"替换范围: {start_line+1} 到 {end_line+1}")
-
-# 新函数代码
-new_function = '''def epsilon_greedyish_speedtest():
+# 创建包含新测速函数的临时文件
+temp_file=$(mktemp)
+sudo cat > "$temp_file" << 'EOF'
+def epsilon_greedyish_speedtest():
     # VPS配置信息
     VPS_CONFIGS = [
         {
@@ -140,7 +100,7 @@ new_function = '''def epsilon_greedyish_speedtest():
         if vps_results:
             best_result = max(vps_results, key=lambda x: x['download_mbps'])
             
-            print(f"\\n🏆 VPS最佳测速结果:")
+            print(f"\n🏆 VPS最佳测速结果:")
             print(f"  下载速度: {best_result['download_mbps']:.1f} Mbps")
             print(f"  上传速度: {best_result['upload_mbps']:.1f} Mbps")
             print(f"  延迟: {best_result['ping']:.1f} ms")
@@ -175,20 +135,17 @@ new_function = '''def epsilon_greedyish_speedtest():
             else:
                 raise FileNotFoundError
     except:
-        return vps_only_speed_test()'''
-
-# 替换
-new_lines = lines[:start_line] + [new_function] + lines[end_line+1:]
-
-# 写入文件
-with open('/var/lib/vastai_kaalia/send_mach_info.py', 'w') as f:
-    f.write('\n'.join(new_lines))
-
-print("替换完成！")
-PYCODE
-
-echo "精确替换完成！"
+        return vps_only_speed_test()
 EOF
 
-# 执行修复
-sudo bash /tmp/exact_fix.sh
+# 使用sed替换343-373行的内容
+sudo sed -i '343,373d' /var/lib/vastai_kaalia/send_mach_info.py
+sudo sed -i '342r '"$temp_file" /var/lib/vastai_kaalia/send_mach_info.py
+
+# 恢复文件权限（可选，为了安全）
+sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
+
+# 清理临时文件
+sudo rm "$temp_file"
+
+echo "测速函数替换完成！原文件已备份。"
