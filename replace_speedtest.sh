@@ -1,18 +1,56 @@
+# 创建精确替换脚本
+sudo tee /tmp/exact_fix.sh > /dev/null << 'EOF'
 #!/bin/bash
 
-# 备份原文件
-cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)
+# 备份
+cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.exact
 
-# 使用Python来精确替换，避免缩进问题
-python3 << 'EOF'
+# 使用Python进行精确替换
+python3 << 'PYCODE'
 import re
 
-# 读取原文件
+# 读取文件
 with open('/var/lib/vastai_kaalia/send_mach_info.py', 'r') as f:
     content = f.read()
 
-# 新的测速函数代码
-new_speedtest_code = '''def epsilon_greedyish_speedtest():
+# 完全删除原函数并插入新函数
+# 先找到原函数的确切位置
+lines = content.split('\n')
+
+# 查找原函数的开始和结束
+start_line = -1
+end_line = -1
+in_function = False
+brace_count = 0
+
+for i, line in enumerate(lines):
+    if 'def epsilon_greedyish_speedtest():' in line:
+        start_line = i
+        in_function = True
+        continue
+    
+    if in_function:
+        # 简单的括号计数来找到函数结束
+        if '{' in line:
+            brace_count += line.count('{')
+        if '}' in line:
+            brace_count -= line.count('}')
+        
+        # 当brace_count为0且遇到return时，认为是函数结束
+        if brace_count == 0 and 'return' in line and i > start_line:
+            end_line = i
+            break
+
+# 如果找不到，使用默认范围343-373
+if start_line == -1 or end_line == -1:
+    print("使用默认行号范围343-373")
+    start_line = 342  # 因为列表从0开始
+    end_line = 372
+
+print(f"替换范围: {start_line+1} 到 {end_line+1}")
+
+# 新函数代码
+new_function = '''def epsilon_greedyish_speedtest():
     # VPS配置信息
     VPS_CONFIGS = [
         {
@@ -139,15 +177,18 @@ new_speedtest_code = '''def epsilon_greedyish_speedtest():
     except:
         return vps_only_speed_test()'''
 
-# 使用正则表达式替换原函数
-pattern = r'def epsilon_greedyish_speedtest\(\):.*?return vps_only_speed_test\(\)'
-new_content = re.sub(pattern, new_speedtest_code, content, flags=re.DOTALL)
+# 替换
+new_lines = lines[:start_line] + [new_function] + lines[end_line+1:]
 
-# 写入新内容
+# 写入文件
 with open('/var/lib/vastai_kaalia/send_mach_info.py', 'w') as f:
-    f.write(new_content)
+    f.write('\n'.join(new_lines))
 
 print("替换完成！")
+PYCODE
+
+echo "精确替换完成！"
 EOF
 
-echo "测速函数替换完成！原文件已备份。"
+# 执行修复
+sudo bash /tmp/exact_fix.sh
