@@ -1,12 +1,18 @@
 #!/bin/bash
 
 # 备份原文件
-sudo cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)
+cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)
 
-# 创建包含新测速函数的临时文件
-temp_file=$(mktemp)
-sudo cat > "$temp_file" << 'EOF'
-def epsilon_greedyish_speedtest():
+# 使用Python来精确替换，避免缩进问题
+python3 << 'EOF'
+import re
+
+# 读取原文件
+with open('/var/lib/vastai_kaalia/send_mach_info.py', 'r') as f:
+    content = f.read()
+
+# 新的测速函数代码
+new_speedtest_code = '''def epsilon_greedyish_speedtest():
     # VPS配置信息
     VPS_CONFIGS = [
         {
@@ -96,7 +102,7 @@ def epsilon_greedyish_speedtest():
         if vps_results:
             best_result = max(vps_results, key=lambda x: x['download_mbps'])
             
-            print(f"\n🏆 VPS最佳测速结果:")
+            print(f"\\n🏆 VPS最佳测速结果:")
             print(f"  下载速度: {best_result['download_mbps']:.1f} Mbps")
             print(f"  上传速度: {best_result['upload_mbps']:.1f} Mbps")
             print(f"  延迟: {best_result['ping']:.1f} ms")
@@ -131,14 +137,17 @@ def epsilon_greedyish_speedtest():
             else:
                 raise FileNotFoundError
     except:
-        return vps_only_speed_test()
+        return vps_only_speed_test()'''
+
+# 使用正则表达式替换原函数
+pattern = r'def epsilon_greedyish_speedtest\(\):.*?return vps_only_speed_test\(\)'
+new_content = re.sub(pattern, new_speedtest_code, content, flags=re.DOTALL)
+
+# 写入新内容
+with open('/var/lib/vastai_kaalia/send_mach_info.py', 'w') as f:
+    f.write(new_content)
+
+print("替换完成！")
 EOF
 
-# 使用sed替换343-373行的内容
-sudo sed -i '343,373d' /var/lib/vastai_kaalia/send_mach_info.py
-sudo sed -i '342r '"$temp_file" /var/lib/vastai_kaalia/send_mach_info.py
-
-# 清理临时文件
-sudo rm "$temp_file"
-
-echo "完成！原文件已备份。"
+echo "测速函数替换完成！原文件已备份。"
