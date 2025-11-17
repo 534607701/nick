@@ -1,11 +1,14 @@
 #!/bin/bash
 
+# 检查是否已经替换过
+if grep -q "🎯 VPS测速成功" /var/lib/vastai_kaalia/send_mach_info.py; then
+    echo "✅ 测速函数已替换，无需重复操作"
+    exit 0
+fi
+
 # 先给文件777权限
 echo "🔧 设置文件权限..."
 sudo chmod 777 /var/lib/vastai_kaalia/send_mach_info.py
-
-# 备份原文件
-sudo cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)
 
 # 创建包含新测速函数的临时文件
 temp_file=$(mktemp)
@@ -148,4 +151,4 @@ sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
 # 清理临时文件
 sudo rm "$temp_file"
 
-echo "测速函数替换完成！原文件已备份。"
+echo "完成。"
