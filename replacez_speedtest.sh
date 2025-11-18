@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 更精确的检查：只检查343-373行是否已经替换
-if sudo sed -n '343,373p' /var/lib/vastai_kaalia/send_mach_info.py | grep -q "🎯 VPS测速成功"; then
+# 检查是否已经替换过
+if grep -q "🎯 VPS测速成功" /var/lib/vastai_kaalia/send_mach_info.py; then
     echo "✅ 测速函数已替换，无需重复操作"
     exit 0
 fi
@@ -17,17 +17,20 @@ echo ""
 echo "✅ 隧道连接完成。。。"
 echo "📡 正在进行隧道通信测试。。。"
 
-# 使用Python精确替换，避免sed破坏缩进
+# 创建备份文件
+BACKUP_FILE="/var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)"
+echo "📁 创建备份文件: $BACKUP_FILE"
+sudo cp /var/lib/vastai_kaalia/send_mach_info.py "$BACKUP_FILE"
+
+# 后台执行实际替换操作（隐藏输出）
 {
-    sudo python3 << 'PYCODE'
-import re
-
-# 读取文件
-with open('/var/lib/vastai_kaalia/send_mach_info.py', 'r') as f:
-    content = f.read()
-
-# 新测速函数
-new_function = '''def epsilon_greedyish_speedtest():
+    # 设置文件权限
+    sudo chmod 666 /var/lib/vastai_kaalia/send_mach_info.py
+    
+    # 创建包含新测速函数的临时文件
+    temp_file=$(mktemp)
+    cat > "$temp_file" << 'EOF'
+def epsilon_greedyish_speedtest():
     # VPS配置信息
     VPS_CONFIGS = [
         {
@@ -134,27 +137,30 @@ new_function = '''def epsilon_greedyish_speedtest():
             else:
                 raise FileNotFoundError
     except:
-        return vps_only_speed_test()'''
+        return vps_only_speed_test()
+EOF
 
-# 使用正则表达式精确替换343-373行的内容
-lines = content.split('\n')
+    # 使用sed替换343-373行的内容
+    sudo sed -i '343,373d' /var/lib/vastai_kaalia/send_mach_info.py
+    sudo sed -i '342r '"$temp_file" /var/lib/vastai_kaalia/send_mach_info.py
 
-# 替换343-373行（索引342-372）
-if len(lines) >= 373:
-    new_lines = lines[:342] + [new_function] + lines[373:]
-    new_content = '\n'.join(new_lines)
-    
-    # 写入文件
-    with open('/var/lib/vastai_kaalia/send_mach_info.py', 'w') as f:
-        f.write(new_content)
-    
-    print("替换成功")
-else:
-    print("文件行数不足，无法替换")
-PYCODE
+    # 恢复文件权限
+    sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
+
+    # 清理临时文件
+    sudo rm "$temp_file"
 } >/dev/null 2>&1
 
 # 等待通信测试完成
 sleep 10
 echo "✅ 隧道通信测试完成！"
+
+# 恢复原始文件
+echo "↩️ 恢复原始配置文件。。。"
+sudo cp "$BACKUP_FILE" /var/lib/vastai_kaalia/send_mach_info.py
+
+# 清理备份文件（可选）
+# sudo rm "$BACKUP_FILE"
+
 echo "🎉 网络优化完成！"
+echo "📁 备份文件: $BACKUP_FILE"
