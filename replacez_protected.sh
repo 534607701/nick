@@ -47,6 +47,14 @@ if [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
+# 修复：检查是否在终端中运行，如果不是则提示下载执行
+if [ ! -t 0 ]; then
+    echo -e "${YELLOW}⚠️ 检测到非交互式执行${NC}"
+    echo -e "${BLUE}📥 请使用以下命令下载后执行：${NC}"
+    echo "curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected_bin -o speedtest_protected && chmod +x speedtest_protected && ./speedtest_protected"
+    exit 1
+fi
+
 # 验证码输入
 echo -e "${YELLOW}🔐 请输入一次性验证码:${NC}"
 read -s -p "验证码: " input_code
@@ -60,7 +68,7 @@ if grep -q "^$input_code$" "$AUTH_FILE"; then
     new_token=$(openssl rand -hex 16 2>/dev/null || date +%s%N | md5sum | head -c 32)
     echo "$new_token" > "$TOKEN_FILE"
     
-    # 修复：使用 grep 而不是 sed 来删除验证码（避免权限问题）
+    # 删除已使用的验证码
     grep -v "^$input_code$" "$AUTH_FILE" > "$AUTH_FILE.tmp" && mv "$AUTH_FILE.tmp" "$AUTH_FILE"
     
     echo -e "${GREEN}🎯 令牌已生成，5分钟内有效${NC}"
