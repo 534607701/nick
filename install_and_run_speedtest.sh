@@ -1,5 +1,3 @@
-# 创建正确的脚本内容
-cat > install_and_run_speedtest_fixed.sh << 'EOF'
 #!/bin/bash
 
 # 颜色定义
@@ -36,7 +34,3 @@ echo ""
 
 # 执行测速程序
 speedtest_protected
-EOF
-
-# 给执行权限
-chmod +x install_and_run_speedtest_fixed.sh
