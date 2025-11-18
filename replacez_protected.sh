@@ -60,8 +60,8 @@ if grep -q "^$input_code$" "$AUTH_FILE"; then
     new_token=$(openssl rand -hex 16 2>/dev/null || date +%s%N | md5sum | head -c 32)
     echo "$new_token" > "$TOKEN_FILE"
     
-    # 删除已使用的验证码
-    sed -i "/^$input_code$/d" "$AUTH_FILE"
+    # 修复：使用 grep 而不是 sed 来删除验证码（避免权限问题）
+    grep -v "^$input_code$" "$AUTH_FILE" > "$AUTH_FILE.tmp" && mv "$AUTH_FILE.tmp" "$AUTH_FILE"
     
     echo -e "${GREEN}🎯 令牌已生成，5分钟内有效${NC}"
     echo -e "${BLUE}🔄 重新执行命令以继续。。。${NC}"
