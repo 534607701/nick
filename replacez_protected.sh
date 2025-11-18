@@ -47,14 +47,6 @@ if [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
-# 修复：检查是否在终端中运行，如果不是则提示下载执行
-if [ ! -t 0 ]; then
-    echo -e "${YELLOW}⚠️ 检测到非交互式执行${NC}"
-    echo -e "${BLUE}📥 请使用以下命令下载后执行：${NC}"
-    echo "curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected_bin -o speedtest_protected && chmod +x speedtest_protected && ./speedtest_protected"
-    exit 1
-fi
-
 # 验证码输入
 echo -e "${YELLOW}🔐 请输入一次性验证码:${NC}"
 read -s -p "验证码: " input_code
@@ -78,3 +70,4 @@ else
     echo -e "${YELLOW}💡 请向管理员获取新的验证码${NC}"
     exit 1
 fi
+EOF
