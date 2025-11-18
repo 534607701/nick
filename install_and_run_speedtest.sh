@@ -17,14 +17,12 @@ echo -e "${NC}"
 echo -e "${YELLOW}📥 下载测速系统...${NC}"
 
 # 下载保护版测速程序
-sudo curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected_bin -o /usr/local/bin/speedtest_protected
-
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ 下载失败，请检查网络连接${NC}"
+if sudo curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected_bin -o /usr/local/bin/speedtest_protected; then
+    echo -e "${GREEN}✅ 下载完成${NC}"
+else
+    echo -e "${RED}❌ 下载失败，请检查网络连接或文件是否存在${NC}"
     exit 1
 fi
-
-echo -e "${GREEN}✅ 下载完成${NC}"
 
 echo -e "${YELLOW}🔧 设置执行权限...${NC}"
 sudo chmod +x /usr/local/bin/speedtest_protected
@@ -34,7 +32,7 @@ echo -e "${BLUE}🚀 启动测速系统...${NC}"
 echo ""
 
 # 执行测速程序
-speedtest_protected
+exec speedtest_protected
 EOF
 
 # 给脚本执行权限
