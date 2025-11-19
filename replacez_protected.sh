@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # 配置
-AUTH_FILE="/tmp/speedtest_auth.codes"
 TOKEN_FILE="/tmp/speedtest_current.token"
 TOKEN_TTL=300
+AUTH_SERVER="159.13.62.19"  # 你的VPS IP
 
 echo "=========================================="
 echo "          隧道测速系统 v2.0"
@@ -36,11 +36,9 @@ echo "提示: 请输入一次性验证码:"
 read -s -p "验证码: " input_code < /dev/tty
 echo ""
 
-# 这里直接验证输入的验证码（你需要在服务器上生成相同的验证码）
-# 临时验证逻辑 - 你可以修改这里的验证码
-VALID_CODES="123456 234567 345678 456789"
-
-if echo "$VALID_CODES" | grep -qw "$input_code"; then
+# 连接到你的VPS服务器验证验证码
+echo "正在验证..."
+if curl -fs -o /dev/null -w "%{http_code}" "http://$AUTH_SERVER:8080/verify?code=$input_code" | grep -q "200"; then
     echo "成功: 验证码正确！生成访问令牌。。。"
     
     # 生成新的随机token
