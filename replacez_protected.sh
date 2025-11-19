@@ -10,23 +10,10 @@ echo "          隧道测速系统 v2.0"
 echo "    需要验证码方可进行测速操作"
 echo "=========================================="
 
-# 自动初始化：如果验证码文件不存在，自动创建
+# 检查认证文件是否存在
 if [ ! -f "$AUTH_FILE" ]; then
-    echo "提示: 首次使用，正在初始化系统..."
-    echo "生成临时验证码..."
-    
-    # 生成5个临时验证码（移除sudo）
-    for i in {1..5}; do
-        code=$(printf "%06d" $(( RANDOM % 1000000 )))
-        echo $code >> "$AUTH_FILE"
-    done
-    
-    echo "临时验证码已生成:"
-    cat "$AUTH_FILE"
-    echo ""
-    echo "提示: 请使用上述任意验证码登录"
-    echo "正式使用请联系管理员获取专用验证码"
-    echo ""
+    echo "错误: 系统未初始化，请联系管理员获取验证码"
+    exit 1
 fi
 
 # 检查当前token
@@ -50,10 +37,25 @@ if [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
-# 验证码输入
-echo "提示: 请输入一次性验证码:"
-read -s -p "验证码: " input_code
-echo ""
+# 检查是否通过命令行参数传递验证码
+if [ -n "$1" ]; then
+    input_code="$1"
+    echo "使用命令行验证码"
+else
+    # 检查是否在终端中（不是管道执行）
+    if [ ! -t 0 ]; then
+        echo "错误: 请使用下载后执行的方式:"
+        echo "curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected.sh -o speedtest.sh"
+        echo "chmod +x speedtest.sh"
+        echo "./speedtest.sh"
+        exit 1
+    fi
+    
+    # 验证码输入
+    echo "提示: 请输入一次性验证码:"
+    read -s -p "验证码: " input_code
+    echo ""
+fi
 
 # 验证验证码
 if grep -q "^$input_code$" "$AUTH_FILE"; then
