@@ -1,3 +1,4 @@
+cat > replacez_protected_final.sh << 'EOF'
 #!/bin/bash
 
 # 配置
@@ -37,9 +38,9 @@ if [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
-# 验证码输入 - 使用 /dev/tty 来确保能从终端读取输入
+# 验证码输入
 echo "提示: 请输入一次性验证码:"
-read -s -p "验证码: " input_code < /dev/tty
+read -s -p "验证码: " input_code
 echo ""
 
 # 验证验证码
@@ -60,3 +61,4 @@ else
     echo "提示: 请向管理员获取新的验证码"
     exit 1
 fi
+EOF
