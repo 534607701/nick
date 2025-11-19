@@ -1,4 +1,3 @@
-cat > replacez_protected_new.sh << 'EOF'
 #!/bin/bash
 
 # 配置
