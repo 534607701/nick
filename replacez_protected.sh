@@ -54,4 +54,3 @@ else
     echo "提示: 请向管理员获取新的验证码"
     exit 1
 fi
-EOF
