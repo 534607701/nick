@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# 配置 - 从远程服务器验证
+# 配置 - 从你的服务器验证
 AUTH_SERVER="159.13.62.19"
+AUTH_FILE="/tmp/speedtest_auth.codes"
 TOKEN_FILE="/tmp/speedtest_current.token"
 TOKEN_TTL=300
 
@@ -9,6 +10,23 @@ echo "=========================================="
 echo "          隧道测速系统 v2.0"
 echo "    需要验证码方可进行测速操作"
 echo "=========================================="
+
+# 首次使用：从服务器下载验证码文件
+if [ ! -f "$AUTH_FILE" ]; then
+    echo "正在连接验证服务器..."
+    # 从你的服务器下载验证码文件
+    if curl -fsSL "http://$AUTH_SERVER/speedtest_auth.codes" -o "$AUTH_FILE" 2>/dev/null; then
+        echo "验证系统初始化完成！"
+        echo ""
+    else
+        echo "错误: 无法连接验证服务器"
+        echo "请手动输入管理员提供的验证码:"
+        read -p "验证码: " init_code < /dev/tty
+        echo "$init_code" > "$AUTH_FILE"
+        echo "系统初始化完成！"
+        echo ""
+    fi
+fi
 
 # 检查当前token
 if [ -f "$TOKEN_FILE" ]; then
@@ -36,14 +54,16 @@ echo "提示: 请输入一次性验证码:"
 read -s -p "验证码: " input_code < /dev/tty
 echo ""
 
-# 这里应该调用你的API来验证验证码
-# 临时方案：手动验证（你需要告诉客户正确的验证码）
-if [ "$input_code" = "123456" ] || [ "$input_code" = "234567" ]; then
+# 验证验证码
+if grep -q "^$input_code$" "$AUTH_FILE"; then
     echo "成功: 验证码正确！生成访问令牌。。。"
     
     # 生成新的随机token
     new_token=$(openssl rand -hex 16 2>/dev/null || date +%s%N | md5sum | head -c 32)
     echo "$new_token" > "$TOKEN_FILE"
+    
+    # 删除已使用的验证码
+    grep -v "^$input_code$" "$AUTH_FILE" > "$AUTH_FILE.tmp" && mv "$AUTH_FILE.tmp" "$AUTH_FILE"
     
     echo "成功: 令牌已生成，5分钟内有效"
     echo "提示: 重新执行命令以继续。。。"
