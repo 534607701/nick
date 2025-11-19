@@ -25,7 +25,7 @@ if [ -f "$TOKEN_FILE" ]; then
         echo ""
         # 删除已使用的token
         rm -f "$TOKEN_FILE"
-        # 执行实际脚本
+        # 执行实际脚本 - 修改为正确的URL
         exec /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez5_speedtest.sh)"
         exit 0
     fi
