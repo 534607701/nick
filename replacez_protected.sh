@@ -15,14 +15,14 @@ if [ ! -f "$AUTH_FILE" ]; then
     echo "提示: 首次使用，正在初始化系统..."
     echo "生成临时验证码..."
     
-    # 生成5个临时验证码
+    # 生成5个临时验证码（移除sudo）
     for i in {1..5}; do
         code=$(printf "%06d" $(( RANDOM % 1000000 )))
-        echo $code | sudo tee -a "$AUTH_FILE" > /dev/null
+        echo $code >> "$AUTH_FILE"
     done
     
     echo "临时验证码已生成:"
-    sudo cat "$AUTH_FILE"
+    cat "$AUTH_FILE"
     echo ""
     echo "提示: 请使用上述任意验证码登录"
     echo "正式使用请联系管理员获取专用验证码"
