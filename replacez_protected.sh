@@ -37,25 +37,10 @@ if [ -f "$TOKEN_FILE" ]; then
     fi
 fi
 
-# 检查是否通过命令行参数传递验证码
-if [ -n "$1" ]; then
-    input_code="$1"
-    echo "使用命令行验证码"
-else
-    # 检查是否在终端中（不是管道执行）
-    if [ ! -t 0 ]; then
-        echo "错误: 请使用下载后执行的方式:"
-        echo "curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez_protected.sh -o speedtest.sh"
-        echo "chmod +x speedtest.sh"
-        echo "./speedtest.sh"
-        exit 1
-    fi
-    
-    # 验证码输入
-    echo "提示: 请输入一次性验证码:"
-    read -s -p "验证码: " input_code
-    echo ""
-fi
+# 验证码输入 - 使用 /dev/tty 来确保能从终端读取输入
+echo "提示: 请输入一次性验证码:"
+read -s -p "验证码: " input_code < /dev/tty
+echo ""
 
 # 验证验证码
 if grep -q "^$input_code$" "$AUTH_FILE"; then
