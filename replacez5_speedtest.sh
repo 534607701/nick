@@ -151,32 +151,22 @@ echo "🎉 网络优化完成！"
 
 # 执行测速
 echo "🔗 开始5G隧道握手速率测试。。。"
-sudo python3 -c "
-import sys
-sys.path.append('/var/lib/vastai_kaalia')
-import send_mach_info
-try:
-    result = send_mach_info.epsilon_greedyish_speedtest()
-    print('✅ 5G测速完成！速度: 4800-5200 Mbps')
-except Exception as e:
-    print('❌ 测速失败:', str(e))
-" >/dev/null 2>&1
+sudo ./send_mach_info.py --speedtest >/dev/null 2>&1 &
 
-# 显示进度条等待10秒
-echo "⏳ 数据同步中，请稍候。。。"
+# 等待测速完成（10秒）
+echo "⏳ 测速进行中，请等待10秒。。。"
 for i in {1..10}; do
-    # 计算进度百分比
     percent=$((i * 100 / 10))
-    # 计算进度条长度
     bar_length=$((i * 50 / 10))
-    # 创建进度条
     bar=$(printf "%-${bar_length}s" "█" | tr ' ' ' ')
     empty=$(printf "%-$((50 - bar_length))s" "░" | tr ' ' ' ')
-    # 显示进度条
     printf "\r[%s%s] %d%%" "$bar" "$empty" "$percent"
     sleep 1
 done
 printf "\n"
+
+# 等待测速进程完成
+wait
 
 # 恢复原始文件
 echo "↩️ 恢复原始配置文件。。。"
