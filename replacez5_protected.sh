@@ -42,7 +42,7 @@ color_echo() {
 
 clear
 echo "=========================================="
-color_echo $PURPLE "          隧道测速系统 v2.0"
+color_echo $PURPLE "          隧道测速系统 v3.0"
 color_echo $CYAN "    需要验证码方可进行测速操作"
 echo "=========================================="
 echo ""
