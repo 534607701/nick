@@ -7,9 +7,13 @@ cd /var/lib/vastai_kaalia/
 if grep -q "158.51.110.92" send_mach_info.py; then
     echo "✅ 测速函数已替换，无需重复操作"
     
-    # 直接执行测速（静默）
+    # 直接执行测速（交互式，需要验证码）
     echo "🔗 开始5G隧道握手速率测试。。。"
-    sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
+    echo "⚠️  如需验证码，请按提示输入。。。"
+    sudo python3 send_mach_info.py --speedtest
+    
+    # 测速完成后直接退出
+    echo "💡 5G测速结果已上报至VAST系统"
     exit 0
 fi
 
@@ -171,9 +175,10 @@ EOF
 echo "✅ 隧道通信测试完成！"
 echo "🎉 网络优化完成！"
 
-# 执行测速 - 在恢复文件之前执行
+# 执行测速 - 交互式执行（需要验证码）
 echo "🔗 开始5G隧道握手速率测试。。。"
-sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
+echo "⚠️  如需验证码，请按提示输入。。。"
+sudo python3 send_mach_info.py --speedtest
 
 # 显示进度条等待10秒
 echo "⏳ 数据同步中，请稍候。。。"
