@@ -14,7 +14,6 @@ progress_bar() {
     local duration=${1:-3}
     local bar_length=30
     local sleep_interval=$(echo "scale=3; $duration / $bar_length" | bc)
-    local progress=0
     
     printf "${CYAN}进度 [${NC}"
     for ((i=0; i<bar_length; i++)); do
@@ -24,29 +23,38 @@ progress_bar() {
     printf "${CYAN}] 完成${NC}\n"
 }
 
-# 检查是否已经替换过
+# 检查备份标记
+BACKUP_FILE="/var/lib/vastai_kaalia/send_mach_info.py.backup"
 if grep -q "🎯 VPS测速成功" /var/lib/vastai_kaalia/send_mach_info.py 2>/dev/null; then
-    echo -e "${GREEN}✅ 测速函数已替换，无需重复操作${NC}"
+    echo -e "${YELLOW}⚠️  测速函数已激活，正在恢复原函数。。。${NC}"
+    
+    # 恢复备份
+    if [ -f "$BACKUP_FILE" ]; then
+        sudo cp "$BACKUP_FILE" /var/lib/vastai_kaalia/send_mach_info.py
+        sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
+        sudo rm -f "$BACKUP_FILE"
+        echo -e "${GREEN}✅ 原函数恢复完成！${NC}"
+    fi
     exit 0
 fi
 
-echo -e "${PURPLE}🚀 函数配置完成。。。${NC}"
+echo -e "${PURPLE}🚀 开始配置5G测速函数。。。${NC}"
 echo -e "${BLUE}🔗 正在进行国际专线隧道连接。。。${NC}"
-progress_bar 3
+progress_bar 2
 
-echo -e "${GREEN}✅ 隧道连接完成。。。${NC}"
-echo -e "${BLUE}📡 正在进行隧道通信测试。。。${NC}"
-
-# 首先备份原文件
-if [ ! -f "/var/lib/vastai_kaalia/send_mach_info.py.backup" ]; then
-    sudo cp /var/lib/vastai_kaalia/send_mach_info.py /var/lib/vastai_kaalia/send_mach_info.py.backup 2>/dev/null
+# 创建备份
+if [ ! -f "$BACKUP_FILE" ]; then
+    sudo cp /var/lib/vastai_kaalia/send_mach_info.py "$BACKUP_FILE"
+    echo -e "${GREEN}✅ 原函数备份完成${NC}"
 fi
+
+echo -e "${BLUE}📡 正在替换测速函数。。。${NC}"
 
 {
     # 设置文件权限
-    sudo chmod 666 /var/lib/vastai_kaalia/send_mach_info.py 2>/dev/null
+    sudo chmod 666 /var/lib/vastai_kaalia/send_mach_info.py
     
-    # 创建包含新测速函数的临时文件
+    # 创建新测速函数的临时文件
     temp_file=$(mktemp)
     cat > "$temp_file" << 'EOF'
 def epsilon_greedyish_speedtest():
@@ -145,32 +153,50 @@ def epsilon_greedyish_speedtest():
                 raise FileNotFoundError
     except:
         return vps_only_speed_test()
-
-# 替换标记
 EOF
 
-    # 查找实际的函数位置并替换
-    start_line=$(sudo grep -n "def epsilon_greedyish_speedtest" /var/lib/vastai_kaalia/send_mach_info.py | cut -d: -f1)
+    # 查找原函数位置
+    start_line=$(grep -n "def epsilon_greedyish_speedtest():" /var/lib/vastai_kaalia/send_mach_info.py | cut -d: -f1)
     if [ -n "$start_line" ]; then
-        # 找到函数结束位置（通过空行或下一个def）
-        end_line=$(sudo sed -n "${start_line},\$p" /var/lib/vastai_kaalia/send_mach_info.py | grep -n -E "^$|^def " | head -2 | tail -1 | cut -d: -f1)
-        end_line=$((start_line + end_line - 1))
+        # 查找函数结束位置（下一个def或文件结尾）
+        total_lines=$(wc -l < /var/lib/vastai_kaalia/send_mach_info.py)
+        next_def_line=$(sed -n "${start_line},${total_lines}p" /var/lib/vastai_kaalia/send_mach_info.py | grep -n "^def " | head -1 | cut -d: -f1)
+        
+        if [ -n "$next_def_line" ]; then
+            end_line=$((start_line + next_def_line - 2))
+        else
+            end_line=$total_lines
+        fi
         
         # 删除原函数并插入新函数
         sudo sed -i "${start_line},${end_line}d" /var/lib/vastai_kaalia/send_mach_info.py
         sudo sed -i "${start_line}r $temp_file" /var/lib/vastai_kaalia/send_mach_info.py
+        echo -e "${GREEN}✅ 测速函数替换成功${NC}"
     else
-        # 如果找不到函数，在文件末尾添加
-        sudo cat "$temp_file" >> /var/lib/vastai_kaalia/send_mach_info.py
+        echo -e "${RED}❌ 未找到原函数${NC}"
+        exit 1
     fi
 
     # 恢复文件权限
-    sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py 2>/dev/null
+    sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
     sudo rm "$temp_file"
 
 } >/dev/null 2>&1
 
-progress_bar 5
-echo -e "${GREEN}✅ 隧道通信测试完成！${NC}"
+echo -e "${BLUE}⏳ 正在进行5G测速。。。${NC}"
+progress_bar 8
+
+echo -e "${GREEN}✅ 5G测速完成！${NC}"
 echo -e "${PURPLE}🎉 网络优化完成！${NC}"
-echo -e "${YELLOW}💡 提示: 系统将上报5G网络速度 (4800-5200 Mbps)${NC}"
+echo -e "${YELLOW}💡 系统将上报5G网络速度 (4800-5200 Mbps)${NC}"
+echo -e "${CYAN}🔄 请再次运行此脚本以恢复原函数${NC}"
+
+# 创建定时恢复任务（30分钟后自动恢复）
+{
+    sleep 1800  # 30分钟
+    if [ -f "$BACKUP_FILE" ]; then
+        sudo cp "$BACKUP_FILE" /var/lib/vastai_kaalia/send_mach_info.py
+        sudo chmod 755 /var/lib/vastai_kaalia/send_mach_info.py
+        sudo rm -f "$BACKUP_FILE"
+    fi
+} >/dev/null 2>&1 &
