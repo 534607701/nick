@@ -40,26 +40,8 @@ print_message() {
         "error") echo -e "${RED}❌ ${message}${NC}" ;;
         "warning") echo -e "${YELLOW}⚠️  ${message}${NC}" ;;
         "info") echo -e "${BLUE}ℹ️  ${message}${NC}" ;;
-        "step") echo -e "${GREEN}➡️  ${message}${NC}" ;;  # 改为绿色
+        "step") echo -e "${GREEN}➡️  ${message}${NC}" ;;
     esac
-}
-
-# 动画加载函数
-spinner() {
-    local pid=$1
-    local message=$2
-    local delay=0.1
-    local spinstr='|/-\'
-    
-    echo -n -e "${CYAN}${message} ${NC}"
-    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
-        local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
-        printf "\b\b\b\b\b\b"
-    done
-    printf "    \b\b\b\b"
 }
 
 # 配置
@@ -71,10 +53,10 @@ AUTH_PORT="8080"
 # 清屏并显示标题
 clear
 echo -e "${CYAN}"
-echo "╔══════════════════════════════════════════╗"
-echo "║           ${WHITE}vast.ai隧道测速系统 v3.1${CYAN}          ║"
-echo "║        需要验证码方可进行测速操作        ║"
-echo "╚══════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════╗"
+echo "║    ${WHITE}vast.ai隧道测速系统 v3.1${CYAN}     ║"
+echo "║     需要验证码方可进行测速操作      ║"
+echo "╚══════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
 
@@ -94,10 +76,13 @@ if [ -f "$TOKEN_FILE" ]; then
         
         # 显示加载动画
         print_message "step" "正在加载测速系统"
-        (sleep 2) &
-        spinner $! "加载中"
-        
+        echo -n "加载中"
+        for i in {1..3}; do
+            echo -n "."
+            sleep 0.5
+        done
         echo ""
+        
         echo ""
         # 删除已使用的token
         rm -f "$TOKEN_FILE"
@@ -109,9 +94,9 @@ fi
 
 # 验证码输入
 echo -e "${YELLOW}"
-echo "┌──────────────────────────────────────────┐"
-echo "│              验证码输入                  │"
-echo "└──────────────────────────────────────────┘"
+echo "╔══════════════════════════════════════╗"
+echo "║            验证码输入                ║"
+echo "╚══════════════════════════════════════╝"
 echo -e "${NC}"
 echo ""
 print_message "info" "请输入一次性验证码:"
@@ -157,12 +142,12 @@ if [ "$response_code" = "200" ]; then
     # 显示成功信息
     echo ""
     echo -e "${GREEN}"
-    echo "┌──────────────────────────────────────────┐"
-    echo "│              验证成功                    │"
-    echo "├──────────────────────────────────────────┤"
-    echo "│  ✅ 令牌已生成，5分钟内有效              │"
-    echo "│  ✅ 请重新执行命令以继续测速操作         │"
-    echo "└──────────────────────────────────────────┘"
+    echo "╔══════════════════════════════════════╗"
+    echo "║            验证成功                  ║"
+    echo "╠══════════════════════════════════════╣"
+    echo "║  ✅ 令牌已生成，5分钟内有效          ║"
+    echo "║  ✅ 请重新执行命令以继续测速操作     ║"
+    echo "╚══════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
     
@@ -170,13 +155,13 @@ else
     print_message "error" "验证失败 (响应码: $response_code)"
     echo ""
     echo -e "${RED}"
-    echo "┌──────────────────────────────────────────┐"
-    echo "│              可能的原因                  │"
-    echo "├──────────────────────────────────────────┤"
-    echo "│  🔸 验证码错误或已使用                  │"
-    echo "│  🔸 验证服务未运行                      │"
-    echo "│  🔸 网络连接问题                        │"
-    echo "└──────────────────────────────────────────┘"
+    echo "╔══════════════════════════════════════╗"
+    echo "║            可能的原因                ║"
+    echo "╠══════════════════════════════════════╣"
+    echo "║  🔸 验证码错误或已使用              ║"
+    echo "║  🔸 验证服务未运行                  ║"
+    echo "║  🔸 网络连接问题                    ║"
+    echo "╚══════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
     print_message "warning" "请检查网络连接或联系管理员"
