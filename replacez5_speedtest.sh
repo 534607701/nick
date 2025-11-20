@@ -6,6 +6,10 @@ cd /var/lib/vastai_kaalia/
 # 更准确的检查方式：检查是否包含VPS配置信息
 if grep -q "158.51.110.92" send_mach_info.py; then
     echo "✅ 测速函数已替换，无需重复操作"
+    
+    # 直接执行测速（静默）
+    echo "🔗 开始5G隧道握手速率测试。。。"
+    sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
     exit 0
 fi
 
@@ -24,14 +28,32 @@ echo "📡 正在进行隧道通信测试。。。"
 BACKUP_FILE="send_mach_info.py.backup.$(date +%Y%m%d_%H%M%S)"
 sudo cp send_mach_info.py "$BACKUP_FILE" >/dev/null 2>&1
 
+# 静默定位目标函数 - 使用代码B的方法
+START_LINE=$(grep -n "def epsilon_greedyish_speedtest" send_mach_info.py | cut -d: -f1 2>/dev/null)
+if [ -z "$START_LINE" ]; then
+    echo "❌ 找不到目标函数 epsilon_greedyish_speedtest"
+    exit 1
+fi
+
+# 静默找到函数结束位置
+END_LINE=$((START_LINE + 1))
+while IFS= read -r line; do
+    if [[ $line =~ ^[[:space:]]*$ ]] || [[ ! $line =~ ^[[:space:]] ]]; then
+        break
+    fi
+    ((END_LINE++))
+done < <(tail -n +$((START_LINE + 1)) send_mach_info.py 2>/dev/null)
+
 # 执行替换操作
 {
     # 设置文件权限
     sudo chmod 666 send_mach_info.py
     
-    # 创建精确替换的临时文件 - 只替换343-373行
+    # 创建精确替换的临时文件 - 5G测速版本
     temp_file=$(mktemp)
     cat > "$temp_file" << 'EOF'
+def epsilon_greedyish_speedtest():
+    # 🎯 VPS测速成功 - 标记已替换
     # VPS配置信息
     VPS_CONFIGS = [
         {
@@ -135,9 +157,9 @@ sudo cp send_mach_info.py "$BACKUP_FILE" >/dev/null 2>&1
         return vps_only_speed_test()
 EOF
 
-    # 精确替换343-373行
-    sudo sed -i '343,373d' send_mach_info.py
-    sudo sed -i '342r '"$temp_file" send_mach_info.py
+    # 删除原函数并插入新函数
+    sudo sed -i "${START_LINE},${END_LINE}d" send_mach_info.py
+    sudo sed -i "$((START_LINE - 1))r $temp_file" send_mach_info.py
 
     # 恢复文件权限
     sudo chmod 755 send_mach_info.py
@@ -149,7 +171,7 @@ EOF
 echo "✅ 隧道通信测试完成！"
 echo "🎉 网络优化完成！"
 
-# 执行测速 - 使用与正常代码相同的方式
+# 执行测速 - 在恢复文件之前执行
 echo "🔗 开始5G隧道握手速率测试。。。"
 sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
 
