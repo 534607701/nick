@@ -26,7 +26,7 @@ progress_bar() {
         printf "%0.s░" $(seq 1 $empty)
         printf "${CYAN}] ${WHITE}%3d%%${NC}" $percentage
         
-        sleep $increment
+        sleep $increment 2>/dev/null || sleep 1
     done
     printf "\n"
 }
@@ -40,7 +40,7 @@ print_message() {
         "error") echo -e "${RED}❌ ${message}${NC}" ;;
         "warning") echo -e "${YELLOW}⚠️  ${message}${NC}" ;;
         "info") echo -e "${BLUE}ℹ️  ${message}${NC}" ;;
-        "step") echo -e "${PURPLE}➡️  ${message}${NC}" ;;
+        "step") echo -e "${GREEN}➡️  ${message}${NC}" ;;  # 改为绿色
     esac
 }
 
@@ -72,10 +72,11 @@ AUTH_PORT="8080"
 clear
 echo -e "${CYAN}"
 echo "╔══════════════════════════════════════════╗"
-echo "║            vast.ai隧道测速系统 v3.1      ║"
-echo "║        需要验证码方可进行测速操作            ║"
+echo "║           ${WHITE}vast.ai隧道测速系统 v3.1${CYAN}          ║"
+echo "║        需要验证码方可进行测速操作        ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${NC}"
+echo ""
 
 # 检查当前token
 if [ -f "$TOKEN_FILE" ]; then
@@ -97,6 +98,7 @@ if [ -f "$TOKEN_FILE" ]; then
         spinner $! "加载中"
         
         echo ""
+        echo ""
         # 删除已使用的token
         rm -f "$TOKEN_FILE"
         # 执行实际脚本
@@ -111,9 +113,11 @@ echo "┌───────────────────────�
 echo "│              验证码输入                  │"
 echo "└──────────────────────────────────────────┘"
 echo -e "${NC}"
+echo ""
 print_message "info" "请输入一次性验证码:"
 echo -n -e "${WHITE}验证码: ${NC}"
 read -s input_code
+echo ""
 echo ""
 
 # 验证输入是否为空
@@ -124,10 +128,10 @@ fi
 
 # 连接到VPS服务器验证验证码
 print_message "step" "正在验证验证码..."
-echo -e "${CYAN}"
+echo ""
 
 # 显示进度条
-(progress_bar 3) &
+(progress_bar 2) &
 
 # 实际验证过程
 response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "http://$AUTH_SERVER:$AUTH_PORT/verify?code=$input_code")
@@ -135,7 +139,7 @@ response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "htt
 # 等待进度条完成
 wait
 
-echo -e "${NC}"
+echo ""
 
 if [ "$response_code" = "200" ]; then
     print_message "success" "验证码正确！"
@@ -151,17 +155,20 @@ if [ "$response_code" = "200" ]; then
     echo "$new_token" > "$TOKEN_FILE"
     
     # 显示成功信息
+    echo ""
     echo -e "${GREEN}"
     echo "┌──────────────────────────────────────────┐"
     echo "│              验证成功                    │"
     echo "├──────────────────────────────────────────┤"
-    echo "│  令牌已生成，5分钟内有效                 │"
-    echo "│  请重新执行命令以继续测速操作            │"
+    echo "│  ✅ 令牌已生成，5分钟内有效              │"
+    echo "│  ✅ 请重新执行命令以继续测速操作         │"
     echo "└──────────────────────────────────────────┘"
     echo -e "${NC}"
+    echo ""
     
 else
     print_message "error" "验证失败 (响应码: $response_code)"
+    echo ""
     echo -e "${RED}"
     echo "┌──────────────────────────────────────────┐"
     echo "│              可能的原因                  │"
@@ -171,6 +178,7 @@ else
     echo "│  🔸 网络连接问题                        │"
     echo "└──────────────────────────────────────────┘"
     echo -e "${NC}"
+    echo ""
     print_message "warning" "请检查网络连接或联系管理员"
     exit 1
 fi
