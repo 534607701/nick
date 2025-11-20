@@ -329,3 +329,6 @@ echo "   查看执行次数: cat /opt/vast_speedtest/execution_count.txt"
 echo "   手动停止服务: sudo systemctl stop vast-auto-speedtest.timer"
 echo ""
 echo "⚠️  注意：首次执行必须使用 systemctl start 命令，不要直接运行脚本！"
+echo ""
+echo "🚀 正在启动首次执行（需要验证码）..."
+sudo systemctl start vast-auto-speedtest.service
