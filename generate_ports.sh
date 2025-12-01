@@ -16,7 +16,7 @@ read -p "请输入生成端口数量 (默认: 200): " user_count
 # 设置默认值（如果用户输入为空）
 START_PORT=${user_start_port:-16386}
 COUNT=${user_count:-200}
-OUTPUT_FILE="ports.conf"
+OUTPUT_FILE="/ubuntu/ports.conf"
 
 # 验证输入是否为数字
 if ! [[ "$START_PORT" =~ ^[0-9]+$ ]]; then
