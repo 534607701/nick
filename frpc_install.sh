@@ -4,8 +4,8 @@ set -e  # 遇到错误立即退出
 
 # FRP 客户端自动安装脚本 - 增强稳定版
 FRP_VERSION="${1:-0.64.0}"
-REMOTE_PORT="${2:-39565}"
-PROXY_NAME="${3:-ssh}"
+REMOTE_PORT="${2:-}"
+PROXY_NAME="${3:-}"
 
 echo "开始安装 FRP 客户端 v$FRP_VERSION (增强稳定版)"
 
@@ -41,9 +41,10 @@ cleanup_existing() {
     fi
 }
 
-# 获取远程端口参数
+# 获取远程端口参数 - 修改为独立函数
 get_remote_port() {
-    if [ -n "$REMOTE_PORT" ] && [ "$REMOTE_PORT" != "39565" ]; then
+    # 如果通过参数提供了端口，则直接使用
+    if [ -n "$REMOTE_PORT" ]; then
         if [[ "$REMOTE_PORT" =~ ^[0-9]+$ ]] && [ "$REMOTE_PORT" -ge 1 ] && [ "$REMOTE_PORT" -le 65535 ]; then
             echo "使用指定远程端口: $REMOTE_PORT"
             return 0
@@ -53,6 +54,7 @@ get_remote_port() {
         fi
     fi
     
+    # 如果没有提供参数，则提示用户输入
     while true; do
         read -p "请输入远程端口号 (默认: 39565): " INPUT_PORT
         INPUT_PORT=${INPUT_PORT:-39565}
@@ -65,9 +67,10 @@ get_remote_port() {
     done
 }
 
-# 获取代理名称参数
+# 获取代理名称参数 - 修改为独立函数
 get_proxy_name() {
-    if [ -n "$PROXY_NAME" ] && [ "$PROXY_NAME" != "ssh" ]; then
+    # 如果通过参数提供了代理名称，则直接使用
+    if [ -n "$PROXY_NAME" ]; then
         if [[ "$PROXY_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             echo "使用指定代理名称: $PROXY_NAME"
             return 0
@@ -77,6 +80,7 @@ get_proxy_name() {
         fi
     fi
     
+    # 如果没有提供参数，则提示用户输入
     while true; do
         read -p "请输入代理名称 (默认: ssh_$(hostname)): " INPUT_NAME
         INPUT_NAME=${INPUT_NAME:-"ssh_$(hostname)"}
@@ -335,10 +339,10 @@ main() {
     # 清理现有服务
     cleanup_existing
     
-    # 获取远程端口
+    # 独立获取远程端口
     get_remote_port
     
-    # 获取代理名称
+    # 独立获取代理名称
     get_proxy_name
     
     # 显示配置摘要
