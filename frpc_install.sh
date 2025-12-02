@@ -210,7 +210,7 @@ User=root
 # 总是重启，不受限制
 Restart=always
 # 立即重启（无延迟）
-RestartSec=0
+RestartSec=2
 # 无限重试
 StartLimitInterval=0
 # 启动失败后无限重试
