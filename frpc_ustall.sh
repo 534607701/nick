@@ -2,7 +2,7 @@
 
 set -e  # 遇到错误立即退出
 
-# FRP 客户端完全卸载脚本
+# FRP 客户端完全卸载脚本（无确认，自动执行）
 echo "开始卸载 FRP 客户端..."
 
 # 颜色定义
@@ -24,11 +24,13 @@ error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# 检查是否以 root 权限运行
+# 检查是否以 root 权限运行，如果不是则自动使用 sudo
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        error "请使用 sudo 或以 root 用户运行此脚本"
-        exit 1
+        info "需要 root 权限，尝试使用 sudo..."
+        # 重新使用 sudo 执行脚本
+        exec sudo bash "$0" "$@"
+        exit $?
     fi
 }
 
@@ -219,11 +221,6 @@ show_uninstall_summary() {
     echo "✅ 清理日志文件"
     echo "✅ 清理临时文件"
     echo ""
-    echo "建议操作:"
-    echo "1. 重启系统以确保完全清理 (可选)"
-    echo "2. 检查防火墙规则是否需要调整"
-    echo "3. 验证端口是否已释放"
-    echo ""
     echo "验证命令:"
     echo "• 检查服务状态: systemctl status frpc"
     echo "• 检查进程: pgrep frpc"
@@ -231,41 +228,6 @@ show_uninstall_summary() {
     echo ""
     echo "如果需要重新安装，请运行安装脚本。"
     echo "========================================="
-}
-
-# 确认卸载
-confirm_uninstall() {
-    echo "========================================="
-    echo "         FRP 客户端卸载程序"
-    echo "========================================="
-    echo ""
-    echo "这将执行以下操作:"
-    echo "1. 停止并禁用 FRP 服务"
-    echo "2. 杀死所有 FRP 进程"
-    echo "3. 删除所有配置文件"
-    echo "4. 删除所有安装文件"
-    echo "5. 清理所有日志"
-    echo ""
-    echo "⚠️  此操作不可逆！"
-    echo ""
-    
-    read -p "确认要卸载 FRP 客户端吗？(输入 'yes' 继续): " CONFIRM
-    
-    if [ "$CONFIRM" != "yes" ]; then
-        info "卸载已取消"
-        exit 0
-    fi
-    
-    echo ""
-    read -p "是否保留配置文件？(y/N): " KEEP_CONFIG
-    
-    if [[ "$KEEP_CONFIG" =~ ^[Yy]$ ]]; then
-        KEEP_CONFIGS=true
-        warn "将保留配置文件"
-    else
-        KEEP_CONFIGS=false
-        info "将删除所有配置文件"
-    fi
 }
 
 # 验证卸载
@@ -291,7 +253,7 @@ verify_uninstall() {
     fi
     
     # 检查配置文件目录
-    if [ -d "/etc/frp" ] && [ "$KEEP_CONFIGS" = false ]; then
+    if [ -d "/etc/frp" ]; then
         error "❌ 配置文件目录仍然存在"
         verification_passed=false
     else
@@ -315,41 +277,41 @@ verify_uninstall() {
 
 # 主卸载函数
 main() {
-    check_root
-    confirm_uninstall
+    check_root "$@"
     
+    info "开始自动卸载 FRP 客户端..."
+    info "无需确认，直接执行..."
+    
+    # 获取当前用户，用于删除家目录下的配置
+    CURRENT_USER=${SUDO_USER:-$(whoami)}
+    
+    # 停止服务
     stop_service
+    
+    # 清理进程
     clean_processes
     
-    if [ "$KEEP_CONFIGS" = false ]; then
-        remove_config_files
-    fi
-    
-    remove_binaries
+    # 删除服务文件
     remove_service_file
+    
+    # 删除配置文件
+    remove_config_files
+    
+    # 删除二进制文件
+    remove_binaries
+    
+    # 清理日志
     clean_logs
+    
+    # 清理临时文件
     clean_temp_files
     
+    # 验证卸载
     verify_uninstall
+    
+    # 显示摘要
     show_uninstall_summary
 }
 
-# 处理命令行参数
-if [ "$1" = "-y" ] || [ "$1" = "--yes" ]; then
-    # 非交互模式
-    KEEP_CONFIGS=false
-    echo "以非交互模式卸载 FRP 客户端..."
-    check_root
-    stop_service
-    clean_processes
-    remove_config_files
-    remove_binaries
-    remove_service_file
-    clean_logs
-    clean_temp_files
-    verify_uninstall
-    show_uninstall_summary
-else
-    # 交互模式
-    main "$@"
-fi
+# 立即开始卸载
+main "$@"
