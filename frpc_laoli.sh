@@ -4,7 +4,7 @@ set -e  # 遇到错误立即退出
 
 # FRP 客户端自动安装脚本 - 与服务端配套版本
 FRP_VERSION="${1:-0.64.0}"
-REMOTE_PORT="${2:-可以输入机器id}"
+REMOTE_PORT="${2:-39565}"
 PROXY_NAME="${3:-ssh}"
 
 echo "开始安装 FRP 客户端 v$FRP_VERSION"
@@ -48,8 +48,8 @@ get_remote_port() {
     fi
     
     while true; do
-        read -p "请输入远程端口号 (默认: 自行输入): " INPUT_PORT
-        INPUT_PORT=${INPUT_PORT:-11111}
+        read -p "请输入远程端口号 (默认: 39565): " INPUT_PORT
+        INPUT_PORT=${INPUT_PORT:-39565}
         if [[ "$INPUT_PORT" =~ ^[0-9]+$ ]] && [ "$INPUT_PORT" -ge 1 ] && [ "$INPUT_PORT" -le 65535 ]; then
             REMOTE_PORT=$INPUT_PORT
             break
