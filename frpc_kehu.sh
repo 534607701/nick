@@ -4,8 +4,6 @@ set -e  # 遇到错误立即退出
 
 # FRP 客户端自动安装脚本 - 与服务端配套版本
 FRP_VERSION="${1:-0.64.0}"
-REMOTE_PORT="${2:-39565}"
-PROXY_NAME="${3:-ssh}"
 
 echo "开始安装 FRP 客户端 v$FRP_VERSION"
 
@@ -37,21 +35,19 @@ cleanup_existing() {
 
 # 获取远程端口参数
 get_remote_port() {
-    if [ -n "$REMOTE_PORT" ] && [ "$REMOTE_PORT" != "11111" ]; then
-        if [[ "$REMOTE_PORT" =~ ^[0-9]+$ ]] && [ "$REMOTE_PORT" -ge 1 ] && [ "$REMOTE_PORT" -le 65535 ]; then
-            echo "使用指定远程端口: $REMOTE_PORT"
-            return 0
-        else
-            echo "错误: 端口号必须是 1-65535 之间的数字"
-            exit 1
-        fi
-    fi
-    
     while true; do
-        read -p "请输入远程端口号 (默认: 11111): " INPUT_PORT
-        INPUT_PORT=${INPUT_PORT:-39565}
+        read -p "请输入远程端口号 (必须输入，不能为空): " INPUT_PORT
+        
+        # 检查输入是否为空
+        if [ -z "$INPUT_PORT" ]; then
+            echo "错误: 端口号不能为空"
+            continue
+        fi
+        
+        # 检查是否为数字且在有效范围内
         if [[ "$INPUT_PORT" =~ ^[0-9]+$ ]] && [ "$INPUT_PORT" -ge 1 ] && [ "$INPUT_PORT" -le 65535 ]; then
             REMOTE_PORT=$INPUT_PORT
+            echo "使用远程端口: $REMOTE_PORT"
             break
         else
             echo "错误: 端口号必须是 1-65535 之间的数字"
@@ -61,16 +57,6 @@ get_remote_port() {
 
 # 获取代理名称参数
 get_proxy_name() {
-    if [ -n "$PROXY_NAME" ] && [ "$PROXY_NAME" != "ssh" ]; then
-        if [[ "$PROXY_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "使用指定代理名称: $PROXY_NAME"
-            return 0
-        else
-            echo "错误: 代理名称只能包含字母、数字、下划线和连字符"
-            exit 1
-        fi
-    fi
-    
     while true; do
         read -p "请输入代理名称 (默认: ssh_$(hostname)): " INPUT_NAME
         INPUT_NAME=${INPUT_NAME:-"ssh_$(hostname)"}
@@ -118,133 +104,6 @@ check_root() {
     if [[ $EUID -ne 0 ]]; then
         echo "请使用 sudo 或以 root 用户运行此脚本"
         exit 1
-    fi
-}
-
-# 端口生成函数
-generate_ports() {
-    echo ""
-    echo "=== 端口配置生成器 ==="
-    echo "可选步骤: 为批量端口映射生成配置"
-    echo ""
-    
-    read -p "是否要生成批量端口配置？(y/N): " GEN_PORTS
-    if [[ ! "$GEN_PORTS" =~ ^[Yy]$ ]]; then
-        echo "跳过端口生成"
-        return 0
-    fi
-    
-    read -p "请输入起始端口 (默认: 16386): " user_start_port
-    read -p "请输入生成端口数量 (默认: 200): " user_count
-    
-    # 设置默认值（如果用户输入为空）
-    START_PORT=${user_start_port:-16386}
-    COUNT=${user_count:-200}
-    PORT_CONF_FILE="/etc/frp/ports.conf"
-    
-    # 验证输入是否为数字
-    if ! [[ "$START_PORT" =~ ^[0-9]+$ ]]; then
-        echo "错误: 起始端口必须是数字!"
-        exit 1
-    fi
-    
-    if ! [[ "$COUNT" =~ ^[0-9]+$ ]]; then
-        echo "错误: 端口数量必须是数字!"
-        exit 1
-    fi
-    
-    # 验证端口范围
-    if [ "$START_PORT" -lt 1024 ] || [ "$START_PORT" -gt 65535 ]; then
-        echo "错误: 起始端口必须在 1024-65535 范围内!"
-        exit 1
-    fi
-    
-    END_PORT=$((START_PORT + COUNT - 1))
-    if [ "$COUNT" -lt 1 ] || [ "$END_PORT" -gt 65535 ]; then
-        echo "错误: 端口数量无效或超出可用端口范围!"
-        echo "起始端口: $START_PORT, 结束端口: $END_PORT, 最大端口: 65535"
-        exit 1
-    fi
-    
-    echo ""
-    echo "开始生成端口配置..."
-    echo "起始端口: $START_PORT"
-    echo "结束端口: $END_PORT"
-    echo "生成数量: $COUNT"
-    echo "输出文件: $PORT_CONF_FILE"
-    echo ""
-    
-    # 询问用户是否继续
-    read -p "确认生成配置？(y/N): " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        echo "已取消端口生成"
-        return 0
-    fi
-    
-    # 清空或创建输出文件
-    echo "# 自动生成的端口配置" > "$PORT_CONF_FILE"
-    echo "# 生成时间: $(date)" >> "$PORT_CONF_FILE"
-    echo "# 起始端口: $START_PORT, 数量: $COUNT" >> "$PORT_CONF_FILE"
-    echo "" >> "$PORT_CONF_FILE"
-    
-    # 生成配置
-    for ((i=0; i<COUNT; i++)); do
-        PORT=$((START_PORT + i))
-        
-        cat >> "$PORT_CONF_FILE" << EOF
-[[proxies]]
-name = "port_${PORT}_tcp"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = $PORT
-remotePort = $PORT
-
-EOF
-        
-        # 显示进度
-        if (( (i + 1) % 50 == 0 )); then
-            echo "已生成 $((i + 1))/$COUNT 个配置"
-        fi
-    done
-    
-    echo ""
-    echo "✅ 端口配置生成完成!"
-    echo "📁 文件: $PORT_CONF_FILE"
-    echo "📊 大小: $(du -h "$PORT_CONF_FILE" | cut -f1)"
-    echo "📈 行数: $(wc -l < "$PORT_CONF_FILE")"
-    
-    # 询问是否将端口配置合并到主配置文件
-    read -p "是否将端口配置合并到主配置文件？(Y/n): " MERGE_CONFIRM
-    MERGE_CONFIRM=${MERGE_CONFIRM:-Y}
-    
-    if [[ "$MERGE_CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "合并端口配置到主配置文件..."
-        
-        # 备份原配置文件
-        cp /etc/frp/frpc.toml /etc/frp/frpc.toml.backup.$(date +%s)
-        
-        # 合并配置
-        {
-            echo "serverAddr = \"$SERVER_ADDR\""
-            echo "serverPort = $SERVER_PORT"
-            echo "auth.token = \"$AUTH_TOKEN\""
-            echo ""
-            echo "# SSH 主连接"
-            echo "[[proxies]]"
-            echo "name = \"$PROXY_NAME\""
-            echo "type = \"tcp\""
-            echo "localIP = \"127.0.0.1\""
-            echo "localPort = 22"
-            echo "remotePort = $REMOTE_PORT"
-            echo ""
-            echo "# 批量端口映射 (共 $COUNT 个)"
-            cat "$PORT_CONF_FILE"
-        } > /etc/frp/frpc.toml
-        
-        echo "✅ 端口配置已合并到 /etc/frp/frpc.toml"
-    else
-        echo "端口配置保存为独立文件: $PORT_CONF_FILE"
-        echo "您可以手动将其内容添加到 /etc/frp/frpc.toml 文件中"
     fi
 }
 
@@ -406,24 +265,6 @@ SERVICE
         exit 1
     fi
     
-    # 生成端口配置
-    generate_ports
-    
-    # 如果修改了配置文件，需要重启服务
-    if [[ "$MERGE_CONFIRM" =~ ^[Yy]$ ]] 2>/dev/null; then
-        echo ""
-        echo "检测到配置文件已更新，正在重启 FRP 服务..."
-        systemctl restart frpc
-        sleep 2
-        
-        if systemctl is-active --quiet frpc; then
-            echo "✅ FRP 服务重启成功"
-        else
-            echo "❌ FRP 服务重启失败"
-            journalctl -u frpc -n 20 --no-pager
-        fi
-    fi
-    
     # 清理临时目录
     rm -rf "$TEMP_DIR"
     
@@ -448,19 +289,8 @@ SERVICE
     echo ""
     echo "=== 配置文件位置 ==="
     echo "主配置文件: /etc/frp/frpc.toml"
-    echo "端口配置文件: /etc/frp/ports.conf"
     echo "安装目录: $INSTALL_DIR"
     echo ""
-    
-    if [ -f "/etc/frp/ports.conf" ]; then
-        echo "=== 端口统计 ==="
-        PORT_COUNT=$(grep -c "^\[\[proxies\]\]" /etc/frp/frpc.toml)
-        echo "总代理数量: $PORT_COUNT (包括SSH)"
-        echo "批量端口: $(grep -c "^\[\[proxies\]\]" /etc/frp/ports.conf)"
-        echo ""
-        echo "批量端口范围: $START_PORT - $END_PORT"
-        echo "每个端口映射为: port_<端口号>_tcp"
-    fi
 }
 
 # 运行主函数
