@@ -12,7 +12,7 @@ echo "开始安装 FRP 客户端 v$FRP_VERSION"
 # 配置参数（必须与服务端一致）
 SERVER_ADDR="45.77.214.165"  # 服务器IP
 SERVER_PORT="7000"
-AUTH_TOKEN="ll151078"      # 必须与服务端token一致
+AUTH_TOKEN="qazwsx123.0"      # 必须与服务端token一致
 
 # 停止并清理现有服务
 cleanup_existing() {
