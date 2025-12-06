@@ -10,7 +10,7 @@ DEFAULT_PROXY_NAME="${3:-ssh}"
 echo "开始安装 FRP 客户端 v$FRP_VERSION - 增强稳定版"
 
 # 配置参数（必须与服务端一致）
-SERVER_ADDR="67.215.246.67"  # 服务器IP
+SERVER_ADDR="45.77.214.165"  # 服务器IP
 SERVER_PORT="7000"
 AUTH_TOKEN="qazwsx123.0"      # 必须与服务端token一致
 
@@ -313,7 +313,7 @@ install_monitoring() {
 #!/bin/bash
 # FRP客户端监控脚本 - 增强稳定版
 
-SERVER_ADDR="67.215.246.67"
+SERVER_ADDR="45.77.214.165"
 SERVER_PORT="7000"
 SSH_REMOTE_PORT="39565"
 LOG_FILE="/var/log/frpc-monitor.log"
