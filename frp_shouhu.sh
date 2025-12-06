@@ -1,16 +1,15 @@
 #!/bin/bash
 
 # ============================================
-# FRP智能监控守护进程 - 修正版安装脚本
-# 版本: 1.1
-# 修正: 服务启动失败、日志权限、依赖检查
+# FRP智能监控守护进程安装脚本
+# 配置：5秒检查一次，1个错误就重启，冷却120秒
 # ============================================
 
 set -e
 
 echo "============================================="
 echo "FRP智能监控守护进程安装程序"
-echo "版本: 1.1 (修正版)"
+echo "配置: 5秒/1错误/120秒冷却"
 echo "============================================="
 
 # 检查root权限
@@ -41,20 +40,21 @@ echo "📁 创建目录结构..."
 mkdir -p "$INSTALL_DIR" "$LOG_DIR" "$LOG_DIR/backups"
 chmod 755 "$LOG_DIR"
 
-# 3. 创建核心监控脚本（简化版，避免复杂语法问题）
+# 3. 创建核心监控脚本（5秒检查，1个错误重启，120秒冷却）
 echo "📝 创建核心监控脚本..."
 
 cat > "$INSTALL_DIR/monitor.sh" << 'MONITOR_EOF'
 #!/bin/bash
-# FRP错误监控核心脚本 - 简化稳定版
+# FRP错误监控核心脚本
+# 配置: 5秒检查，1个错误重启，120秒冷却
 
 # 配置
 FRP_SERVICE="frpc"
 LOG_FILE="/var/log/frp-monitor/monitor.log"
 ERROR_LOG="/var/log/frp-monitor/errors.log"
-CHECK_INTERVAL=5
-ERROR_THRESHOLD=1
-RESTART_COOLDOWN=120
+CHECK_INTERVAL=5           # 5秒检查一次
+ERROR_THRESHOLD=1          # 1个错误就重启
+RESTART_COOLDOWN=120       # 冷却120秒
 
 # 确保日志目录存在
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -69,9 +69,9 @@ log() {
 # 检查错误
 check_errors() {
     local errors=0
-    # 检查最近1分钟的连接错误
+    # 检查最近30秒的连接错误（因为5秒检查一次，检查30秒内的错误更合理）
     if command -v journalctl &> /dev/null; then
-        errors=$(journalctl -u "$FRP_SERVICE" --since "1 minute ago" 2>/dev/null | grep -c "connect to local service.*connection refused")
+        errors=$(journalctl -u "$FRP_SERVICE" --since "30 seconds ago" 2>/dev/null | grep -c "connect to local service.*connection refused")
     fi
     echo $errors
 }
@@ -134,13 +134,14 @@ while true; do
             log "冷却时间内，还需等待 ${cooldown_left}秒"
         fi
     elif [ "$ERROR_COUNT" -gt 0 ]; then
-        log "有 $ERROR_COUNT 个错误，但未达到阈值"
+        log "有 $ERROR_COUNT 个错误，但未达到阈值（实际已达到阈值1，这里应该是逻辑检查）"
     fi
     
-    # 清理旧日志
+    # 清理旧日志（保持日志文件不超过1000行）
     if [ -f "$LOG_FILE" ] && [ $(wc -l < "$LOG_FILE") -gt 1000 ]; then
         tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp"
         mv "${LOG_FILE}.tmp" "$LOG_FILE"
+        log "已清理旧日志"
     fi
     
     sleep "$CHECK_INTERVAL"
@@ -149,6 +150,7 @@ MONITOR_EOF
 
 chmod +x "$INSTALL_DIR/monitor.sh"
 echo "✅ 核心监控脚本创建完成"
+echo "   配置: 每${CHECK_INTERVAL}秒检查，${ERROR_THRESHOLD}个错误重启，冷却${RESTART_COOLDOWN}秒"
 
 # 4. 创建管理工具
 echo "🔧 创建管理工具..."
@@ -215,11 +217,18 @@ show_status() {
     echo "📈 最近错误统计:"
     local recent_errors=0
     if command -v journalctl &> /dev/null; then
-        recent_errors=$(journalctl -u frpc --since "10 minutes ago" 2>/dev/null | grep -c "connect to local service")
+        recent_errors=$(journalctl -u frpc --since "1 minute ago" 2>/dev/null | grep -c "connect to local service.*connection refused")
     fi
-    echo "   最近10分钟错误数: $recent_errors"
+    echo "   最近1分钟错误数: $recent_errors"
     
     echo ""
+    
+    # 监控配置
+    echo "⚙️  监控配置:"
+    echo "   检查间隔: 5秒"
+    echo "   错误阈值: 1个错误"
+    echo "   冷却时间: 120秒"
+    echo "   检查窗口: 最近30秒"
 }
 
 case "${1:-status}" in
@@ -260,8 +269,12 @@ case "${1:-status}" in
         sleep 3
         show_status
         ;;
+    config)
+        echo "当前监控配置:"
+        grep -E "^(CHECK_INTERVAL|ERROR_THRESHOLD|RESTART_COOLDOWN)" /opt/frp-monitor/monitor.sh | head -3
+        ;;
     *)
-        echo "用法: $0 {status|logs|restart|start|stop|frp-restart}"
+        echo "用法: $0 {status|logs|restart|start|stop|frp-restart|config}"
         echo ""
         echo "命令:"
         echo "  status       查看状态"
@@ -270,6 +283,7 @@ case "${1:-status}" in
         echo "  start        启动监控"
         echo "  stop         停止监控"
         echo "  frp-restart  重启FRP服务"
+        echo "  config       查看监控配置"
         ;;
 esac
 MANAGER_EOF
@@ -278,13 +292,13 @@ chmod +x "$INSTALL_DIR/manager.sh"
 ln -sf "$INSTALL_DIR/manager.sh" /usr/local/bin/frp-monitor
 echo "✅ 管理工具创建完成"
 
-# 5. 创建系统服务文件（修正版）
+# 5. 创建系统服务文件
 echo "🔄 创建系统服务文件..."
 
 cat > /etc/systemd/system/frp-monitor.service << 'SERVICE_EOF'
 [Unit]
 Description=FRP Error Monitor Service
-Description=Monitor FRP errors and auto-restart
+Description=Monitor FRP errors and auto-restart (5s/1error/120s)
 After=frpc.service network.target
 Wants=frpc.service
 
@@ -334,6 +348,7 @@ if systemctl start frp-monitor; then
     echo "✅ 监控服务启动命令已发送"
 else
     echo "⚠️  监控服务启动返回非零状态"
+    journalctl -u frp-monitor --no-pager -n 10
 fi
 
 # 等待并检查
@@ -385,6 +400,7 @@ echo "  查看日志:  sudo frp-monitor logs"
 echo "  实时日志:  sudo frp-monitor logs -f"
 echo "  重启监控:  sudo frp-monitor restart"
 echo "  重启FRP:   sudo frp-monitor frp-restart"
+echo "  查看配置:  sudo frp-monitor config"
 echo ""
 echo "📌 服务管理:"
 echo "  启动: sudo systemctl start frp-monitor"
@@ -392,9 +408,10 @@ echo "  停止: sudo systemctl stop frp-monitor"
 echo "  状态: sudo systemctl status frp-monitor"
 echo ""
 echo "📌 监控配置:"
-echo "  检查间隔: 30秒"
-echo "  错误阈值: 10个错误"
-echo "  冷却时间: 5分钟"
+echo "  检查间隔: 5秒"
+echo "  错误阈值: 1个错误"
+echo "  冷却时间: 120秒"
+echo "  检查窗口: 最近30秒"
 echo ""
 echo "📌 日志位置:"
 echo "  监控日志: /var/log/frp-monitor/monitor.log"
@@ -404,9 +421,10 @@ echo ""
 echo "============================================="
 echo "✨ 监控守护进程安装完成！"
 echo "✨ 当FRP出现端口连接错误时，会自动重启服务。"
+echo "✨ 配置: 5秒检查一次，1个错误就重启，冷却120秒"
 echo "============================================="
 
 # 8. 显示初始状态
 echo ""
 echo "正在获取初始状态..."
-/usr/local/bin/frp-monitor status | head -30
+/usr/local/bin/frp-monitor status | head -40
