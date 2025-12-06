@@ -52,9 +52,9 @@ cat > "$INSTALL_DIR/monitor.sh" << 'MONITOR_EOF'
 FRP_SERVICE="frpc"
 LOG_FILE="/var/log/frp-monitor/monitor.log"
 ERROR_LOG="/var/log/frp-monitor/errors.log"
-CHECK_INTERVAL=30
-ERROR_THRESHOLD=10
-RESTART_COOLDOWN=300
+CHECK_INTERVAL=5
+ERROR_THRESHOLD=1
+RESTART_COOLDOWN=120
 
 # 确保日志目录存在
 mkdir -p "$(dirname "$LOG_FILE")"
