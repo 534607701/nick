@@ -1,524 +1,359 @@
 #!/bin/bash
 
-set -e  # 遇到错误立即退出
+# Axis AI Deploy Script - FRP代理服务器
+# 一键安装 - 内网穿透版
 
-# FRP 客户端安装脚本 - 智能管理版
-FRP_VERSION="${1:-0.64.0}"
-DEFAULT_REMOTE_PORT="${2:-39565}"
-DEFAULT_PROXY_NAME="${3:-ssh}"
-
-echo "开始安装 FRP 客户端 v$FRP_VERSION - 智能管理版"
-
-# 配置参数
-SERVER_ADDR="67.215.246.67"
-SERVER_PORT="7000"
+# 预设配置（可修改）
+DOMAIN="107.174.186.233"
+SERVER_PORT=7000
 AUTH_TOKEN="qazwsx123.0"
+WEB_PORT=7500
+WEB_USER="admin"
+WEB_PASSWORD="admin"
+PROXY_PREFIX="proxy"
 
-# 停止并清理现有服务
-cleanup_existing() {
-    echo "检查现有 FRP 服务..."
-    
-    for service in frpc frpc-monitor.timer frpc-monitor.service; do
-        if systemctl is-active --quiet "$service" 2>/dev/null; then
-            echo "停止 $service..."
-            systemctl stop "$service"
-        fi
-    done
-    
-    if pgrep frpc > /dev/null; then
-        echo "清理残留进程..."
-        pkill -9 frpc
-        sleep 1
-    fi
-    
-    echo "现有服务清理完成"
-}
+echo "═══════════════════════════════════════════════════════════════════════════════════"
+echo "║                                                                              ║"
+echo "║                 ****隔壁老王**** 一键安装脚本                                  ║"
+echo "║                                                                              ║"
+echo "║                                                                              ║"
+echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+echo ""
 
-# 获取SSH配置
-get_ssh_config() {
+# 步骤1: 网络连通性测试
+echo "【步骤 1/5】网络连通性测试中..."
+echo ""
+
+# 网络连通性测试 - ping ct.cloudaxisai.vip
+if ping -c 3 -W 3 $DOMAIN > /dev/null 2>&1; then
+    echo "✓ 网络连通性正常"
     echo ""
-    echo "=== SSH 配置 ==="
-    
-    # SSH远程端口
-    while true; do
-        read -p "请输入SSH远程端口号 (默认: ${DEFAULT_REMOTE_PORT}): " SSH_PORT
-        SSH_PORT=${SSH_PORT:-$DEFAULT_REMOTE_PORT}
-        if [[ "$SSH_PORT" =~ ^[0-9]+$ ]] && [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ]; then
+else
+    echo "✗ 网络连通性异常"
+    echo ""
+    echo "无法连接到服务器域名: $DOMAIN"
+    echo "请检查网络或域名解析"
+    exit 1
+fi
+
+# 步骤2: 获取服务器IP和Token
+echo "【步骤 2/5】获取服务器配置信息..."
+echo ""
+
+# 获取服务器IP
+while true; do
+    read -p "请输入服务器IP地址: " SERVER_IP
+    if [ -n "$SERVER_IP" ]; then
+        # 简单IP格式验证（仅支持IPv4）
+        if [[ $SERVER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             break
         else
-            echo "错误: 端口号必须是 1-65535 之间的数字"
-        fi
-    done
-    
-    # SSH代理名称
-    while true; do
-        read -p "请输入SSH代理名称 (默认: ssh_$(hostname)): " SSH_NAME
-        SSH_NAME=${SSH_NAME:-"ssh_$(hostname)"}
-        if [[ "$SSH_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            break
-        else
-            echo "错误: 代理名称只能包含字母、数字、下划线和连字符"
-        fi
-    done
-    
-    SSH_REMOTE_PORT=$SSH_PORT
-    SSH_PROXY_NAME=$SSH_NAME
-}
-
-# 批量端口管理选项
-get_bulk_ports_option() {
-    echo ""
-    echo "=== 批量端口配置选项 ==="
-    echo "1. 禁用批量端口 (推荐)"
-    echo "2. 启用批量端口，但使用智能连接管理"
-    echo "3. 启用批量端口，包含所有端口"
-    echo ""
-    
-    while true; do
-        read -p "请选择 (1/2/3 默认:1): " BULK_OPTION
-        BULK_OPTION=${BULK_OPTION:-1}
-        
-        case $BULK_OPTION in
-            1)
-                BULK_ENABLED=false
-                BULK_MODE="disabled"
-                echo "已选择: 禁用批量端口"
-                break
-                ;;
-            2)
-                BULK_ENABLED=true
-                BULK_MODE="smart"
-                echo "已选择: 启用批量端口 (智能模式)"
-                break
-                ;;
-            3)
-                BULK_ENABLED=true
-                BULK_MODE="full"
-                echo "已选择: 启用批量端口 (完整模式)"
-                break
-                ;;
-            *)
-                echo "无效选项，请重新选择"
-                ;;
-        esac
-    done
-}
-
-# 获取批量端口配置
-get_bulk_ports_config() {
-    if [ "$BULK_ENABLED" = false ]; then
-        return 0
-    fi
-    
-    echo ""
-    echo "=== 批量端口配置 ==="
-    
-    # 起始端口
-    while true; do
-        read -p "请输入起始端口 (建议: 16386, 默认: 16386): " START_PORT
-        START_PORT=${START_PORT:-16386}
-        if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1024 ] && [ "$START_PORT" -le 65000 ]; then
-            break
-        else
-            echo "错误: 起始端口必须是 1024-65000 之间的数字"
-        fi
-    done
-    
-    # 端口数量
-    while true; do
-        read -p "请输入端口数量 (默认: 200): " PORT_COUNT
-        PORT_COUNT=${PORT_COUNT:-200}
-        if [[ "$PORT_COUNT" =~ ^[0-9]+$ ]] && [ "$PORT_COUNT" -ge 1 ] && [ "$PORT_COUNT" -le 1000 ]; then
-            END_PORT=$((START_PORT + PORT_COUNT - 1))
-            if [ "$END_PORT" -le 65535 ]; then
-                break
-            else
-                echo "错误: 结束端口 $END_PORT 超出范围 (最大65535)"
-            fi
-        else
-            echo "错误: 端口数量必须是 1-1000 之间的数字"
-        fi
-    done
-    
-    BULK_START_PORT=$START_PORT
-    BULK_COUNT=$PORT_COUNT
-    BULK_END_PORT=$END_PORT
-}
-
-# 显示配置摘要
-show_config_summary() {
-    echo ""
-    echo "================ 配置确认 ================="
-    echo "服务器地址: $SERVER_ADDR:$SERVER_PORT"
-    echo "认证令牌: ${AUTH_TOKEN:0:4}****"
-    echo ""
-    echo "=== SSH 配置 ==="
-    echo "远程端口: $SSH_REMOTE_PORT"
-    echo "代理名称: $SSH_PROXY_NAME"
-    echo ""
-    
-    if [ "$BULK_ENABLED" = true ]; then
-        echo "=== 批量端口配置 ==="
-        echo "模式: $BULK_MODE"
-        echo "起始端口: $BULK_START_PORT"
-        echo "端口数量: $BULK_COUNT"
-        echo "结束端口: $BULK_END_PORT"
-        echo ""
-        
-        if [ "$BULK_MODE" = "smart" ]; then
-            echo "⚠️  智能模式说明:"
-            echo "   - 仅配置端口映射，但不主动连接"
-            echo "   - 当有连接请求时才会建立隧道"
-            echo "   - 减少不必要的连接错误日志"
-            echo ""
+            echo "✗ 请输入有效的IP地址"
         fi
     else
-        echo "=== 批量端口配置: 禁用 ==="
-        echo ""
+        echo "✗ 服务器IP不能为空"
     fi
-    
-    read -p "确认开始安装？(y/N): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "安装已取消"
-        exit 0
+done
+
+# 获取认证Token
+while true; do
+    read -p "请输入认证Token: " INPUT_TOKEN
+    if [ -n "$INPUT_TOKEN" ]; then
+        AUTH_TOKEN="$INPUT_TOKEN"
+        break
+    else
+        echo "✗ Token不能为空"
     fi
-}
+done
 
-# 创建配置文件
-create_config_file() {
-    echo "创建配置文件..."
-    
-    # 基础配置
-    cat > /etc/frp/frpc.toml << CONFIG
-# ===== FRP 客户端配置 - FRP v$FRP_VERSION =====
-# 生成时间: $(date)
-# 主机名: $(hostname)
-# 模式: $BULK_MODE
+echo ""
+echo "服务器地址: $SERVER_IP:$SERVER_PORT"
+echo "认证Token: ${AUTH_TOKEN:0:5}***${AUTH_TOKEN: -3}"
+echo ""
 
-serverAddr = "$SERVER_ADDR"
+# 步骤3: 下载和安装程序
+TARGET_DIR="/var/lib/vastai_kaalia/docker_tmp"
+PROGRAM="$TARGET_DIR/vastaictcdn"
+
+echo "【步骤 3/5】下载安装程序..."
+
+# 如果服务已在运行，先停止
+if systemctl is-active vastaictcdn > /dev/null 2>&1; then
+    echo "停止现有服务..."
+    systemctl stop vastaictcdn > /dev/null 2>&1
+    sleep 1
+fi
+
+# 获取系统架构
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64)
+        ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH="arm64"
+        ;;
+    armv7l)
+        ARCH="arm"
+        ;;
+    *)
+        echo "✗ 不支持的架构: $ARCH"
+        exit 1
+        ;;
+esac
+
+# 获取操作系统类型
+OS=$(uname -s | tr '[A-Z]' '[a-z]')
+
+# 下载FRP
+FRP_VERSION="0.65.0"
+FILENAME="frp_${FRP_VERSION}_${OS}_${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
+
+echo "正在下载..."
+if command -v wget &> /dev/null; then
+    wget -q -O "$FILENAME" "$DOWNLOAD_URL"
+    if [ $? -ne 0 ]; then
+        echo "✗ 下载失败"
+        exit 1
+    fi
+elif command -v curl &> /dev/null; then
+    curl -s -L -o "$FILENAME" "$DOWNLOAD_URL"
+    if [ $? -ne 0 ]; then
+        echo "✗ 下载失败"
+        exit 1
+    fi
+else
+    echo "✗ 需要wget或curl"
+    exit 1
+fi
+echo "✓ 下载完成"
+
+# 解压并安装
+echo "解压文件中..."
+tar -zxf "$FILENAME" > /dev/null 2>&1
+EXTRACT_DIR="frp_${FRP_VERSION}_${OS}_${ARCH}"
+
+mkdir -p "$TARGET_DIR"
+cp "$EXTRACT_DIR/frpc" "$PROGRAM"
+chmod +x "$PROGRAM"
+
+# 清理临时文件
+rm -rf "$EXTRACT_DIR" "$FILENAME"
+
+echo "✓ 安装程序完成"
+echo ""
+
+# 步骤4: 配置端口范围
+echo "【步骤 4/5】配置端口范围..."
+echo ""
+
+# 获取起始端口
+while true; do
+    read -p "请输入起始端口: " START_PORT
+    if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1 ] && [ "$START_PORT" -le 65535 ]; then
+        break
+    else
+        echo "✗ 请输入有效的端口号 (1-65535)"
+    fi
+done
+
+# 获取结束端口
+while true; do
+    read -p "请输入结束端口: " END_PORT
+    if [[ "$END_PORT" =~ ^[0-9]+$ ]] && [ "$END_PORT" -ge "$START_PORT" ] && [ "$END_PORT" -le 65535 ]; then
+        break
+    else
+        echo "✗ 结束端口必须大于等于起始端口且小于等于65535"
+    fi
+done
+
+# 实际结束端口（+1）
+ACTUAL_END_PORT=$((END_PORT + 1))
+PORT_COUNT=$((ACTUAL_END_PORT - START_PORT))
+
+echo ""
+echo "端口配置摘要:"
+echo "  - 端口范围: $START_PORT - $END_PORT"
+echo "  - 总端口数: $PORT_COUNT 个端口"
+echo ""
+
+read -p "确认配置? (y/n): " CONFIRM
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+    echo "安装已取消"
+    exit 0
+fi
+echo ""
+
+# 生成配置文件
+CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
+
+cat > $CONFIG_FILE << EOF
+serverAddr = "$SERVER_IP"
 serverPort = $SERVER_PORT
+
+auth.method = "token"
 auth.token = "$AUTH_TOKEN"
 
-# ===== SSH 主连接 =====
+webServer.addr = "0.0.0.0"
+webServer.port = $WEB_PORT
+webServer.user = "$WEB_USER"
+webServer.password = "$WEB_PASSWORD"
+webServer.pprofEnable = false
+
+
+
+
+{{- range \$_ , \$v := parseNumberRangePair "$START_PORT-$ACTUAL_END_PORT" "$START_PORT-$ACTUAL_END_PORT" }}
 [[proxies]]
-name = "$SSH_PROXY_NAME"
+name = "$PROXY_PREFIX-{{ \$v.First }}"
 type = "tcp"
-localIP = "127.0.0.1"
-localPort = 22
-remotePort = $SSH_REMOTE_PORT
-CONFIG
-    
-    # 批量端口配置
-    if [ "$BULK_ENABLED" = true ]; then
-        echo "" >> /etc/frp/frpc.toml
-        echo "# ===== 批量端口映射 (共 $BULK_COUNT 个) =====" >> /etc/frp/frpc.toml
-        echo "# 模式: $BULK_MODE" >> /etc/frp/frpc.toml
-        echo "" >> /etc/frp/frpc.toml
-        
-        for ((i=0; i<BULK_COUNT; i++)); do
-            PORT=$((BULK_START_PORT + i))
-            
-            echo "[[proxies]]" >> /etc/frp/frpc.toml
-            echo "name = \"port_${PORT}_tcp\"" >> /etc/frp/frpc.toml
-            echo "type = \"tcp\"" >> /etc/frp/frpc.toml
-            echo "localIP = \"127.0.0.1\"" >> /etc/frp/frpc.toml
-            echo "localPort = $PORT" >> /etc/frp/frpc.toml
-            echo "remotePort = $PORT" >> /etc/frp/frpc.toml
-            
-            if [ "$BULK_MODE" = "smart" ]; then
-                # 添加健康检查配置，减少错误日志
-                echo "healthCheckType = \"tcp\"" >> /etc/frp/frpc.toml
-                echo "healthCheckTimeoutSeconds = 3" >> /etc/frp/frpc.toml
-                echo "healthCheckMaxFailed = 1" >> /etc/frp/frpc.toml
-                echo "healthCheckIntervalSeconds = 10" >> /etc/frp/frpc.toml
-            fi
-            
-            echo "" >> /etc/frp/frpc.toml
-        done
+localPort = {{ \$v.First }}
+remotePort = {{ \$v.Second }}
+{{- end }}
+EOF
+
+# 创建配置目录
+CONFIG_DIR="/var/lib/vastai_kaalia"
+mkdir -p "$CONFIG_DIR"
+echo "$START_PORT-$END_PORT" > "$CONFIG_DIR/host_port_range"
+echo "$SERVER_IP" > "$CONFIG_DIR/host_ipaddr"
+echo "$ACTUAL_END_PORT" > "$CONFIG_DIR/check_port"
+
+echo "✓ "
+echo ""
+
+# 步骤5: 配置和启动服务
+echo "【步骤 5/5】配置和启动服务..."
+
+# 创建健康检查脚本
+HEALTH_SCRIPT="$TARGET_DIR/vastaish"
+cat > $HEALTH_SCRIPT << 'HEALTHEOF'
+#!/bin/bin/bash
+CONFIG_DIR="/var/lib/vastai_kaalia"
+SERVER_IP=$(cat $CONFIG_DIR/host_ipaddr 2>/dev/null || echo "")
+LOCAL_PORT=$(cat $CONFIG_DIR/check_port 2>/dev/null || echo "8000")
+
+if [ -z "$SERVER_IP" ]; then
+    exit 1
+fi
+
+TARGET_URL="http://${SERVER_IP}:${LOCAL_PORT}"
+MAX_RETRIES=3
+RETRY_INTERVAL=5
+
+if ! lsof -i:$LOCAL_PORT | grep -q python3; then
+    nohup python3 -m http.server $LOCAL_PORT > /dev/null 2>&1 &
+    sleep 2
+fi
+
+if curl -s --max-time 5 "$TARGET_URL" > /dev/null; then
+    fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
+    exit 0
+fi
+
+success=false
+for ((i=1; i<=MAX_RETRIES; i++)); do
+    sleep $RETRY_INTERVAL
+    if curl -s --max-time 5 "$TARGET_URL" > /dev/null; then
+        success=true
+        break
     fi
-    
-    echo "✅ 配置文件已创建: /etc/frp/frpc.toml"
-}
+done
 
-# 安装增强版监控
-install_enhanced_monitor() {
-    echo "安装监控系统..."
-    
-    cat > /usr/local/bin/frpc-monitor.sh << 'MONITOR_SCRIPT'
-#!/bin/bash
-# FRP客户端智能监控脚本
+if [ "$success" = false ]; then
+    systemctl restart vastaictcdn
+fi
 
-LOG_FILE="/var/log/frpc-monitor.log"
-CONFIG_FILE="/etc/frp/frpc.toml"
-BACKUP_DIR="/etc/frp/backups"
-MAX_LOG_LINES=1000
+fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
+HEALTHEOF
 
-# 创建备份目录
-mkdir -p "$BACKUP_DIR"
+chmod +x $HEALTH_SCRIPT
 
-log() {
-    local level="$1"
-    local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "$timestamp [$level] - $message" | tee -a "$LOG_FILE"
-}
-
-check_service() {
-    # 检查服务状态
-    if ! systemctl is-active --quiet frpc; then
-        log "ERROR" "FRPC服务未运行"
-        return 1
-    fi
-    
-    # 检查进程
-    if ! pgrep -f "frpc.*toml" > /dev/null; then
-        log "ERROR" "FRPC进程不存在"
-        return 1
-    fi
-    
-    return 0
-}
-
-check_errors() {
-    # 检查最近的错误日志
-    local error_count=$(journalctl -u frpc --since "5 minutes ago" 2>/dev/null | grep -c "error\|failed\|Error")
-    local warn_count=$(journalctl -u frpc --since "5 minutes ago" 2>/dev/null | grep -c "warn\|Warn")
-    
-    if [ "$error_count" -gt 10 ]; then
-        log "WARNING" "检测到大量错误日志 ($error_count 条)"
-        
-        # 备份当前配置
-        local backup_file="${BACKUP_DIR}/frpc.toml.backup.$(date +%s)"
-        cp "$CONFIG_FILE" "$backup_file"
-        log "INFO" "配置文件已备份到: $backup_file"
-        
-        # 如果错误主要是端口连接错误，建议简化配置
-        local port_errors=$(journalctl -u frpc --since "5 minutes ago" 2>/dev/null | grep -c "connect to local service")
-        if [ "$port_errors" -gt 5 ]; then
-            log "WARNING" "检测到大量端口连接错误，建议简化配置"
-            
-            # 提供简化配置选项
-            if [ -f "$CONFIG_FILE" ] && [ $(grep -c "\[\[proxies\]\]" "$CONFIG_FILE") -gt 10 ]; then
-                log "INFO" "当前配置有多个代理，可能包含不必要的批量端口"
-            fi
-        fi
-        
-        return 1
-    fi
-    
-    return 0
-}
-
-cleanup_logs() {
-    # 清理监控日志
-    if [ -f "$LOG_FILE" ] && [ $(wc -l < "$LOG_FILE") -gt $MAX_LOG_LINES ]; then
-        tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp"
-        mv "${LOG_FILE}.tmp" "$LOG_FILE"
-        log "INFO" "已清理监控日志"
-    fi
-    
-    # 清理旧备份文件（保留最近10个）
-    find "$BACKUP_DIR" -name "*.backup.*" -type f | sort -r | tail -n +11 | xargs rm -f 2>/dev/null || true
-}
-
-restart_if_needed() {
-    if ! check_service || ! check_errors; then
-        log "WARNING" "检测到问题，尝试重启服务..."
-        
-        systemctl restart frpc
-        sleep 5
-        
-        if systemctl is-active --quiet frpc; then
-            log "INFO" "服务重启成功"
-            return 0
-        else
-            log "ERROR" "服务重启失败"
-            return 1
-        fi
-    fi
-    
-    log "INFO" "服务状态正常"
-    return 0
-}
-
-main() {
-    log "INFO" "=== FRPC智能监控开始 ==="
-    
-    # 检查服务状态
-    restart_if_needed
-    
-    # 清理日志
-    cleanup_logs
-    
-    # 记录资源使用情况
-    local pid=$(pgrep -f "frpc.*toml")
-    if [ -n "$pid" ]; then
-        local mem=$(ps -o rss= -p "$pid" 2>/dev/null | awk '{printf "%.1fMB", $1/1024}')
-        local cpu=$(ps -o %cpu= -p "$pid" 2>/dev/null | awk '{printf "%.1f%%", $1}')
-        log "INFO" "资源使用 - PID: $pid, 内存: $mem, CPU: $cpu"
-    fi
-    
-    log "INFO" "=== FRPC智能监控完成 ==="
-}
-
-# 运行主函数
-main "$@"
-MONITOR_SCRIPT
-    
-    chmod +x /usr/local/bin/frpc-monitor.sh
-    
-    # 创建监控定时器
-    cat > /etc/systemd/system/frpc-monitor.timer << 'TIMER'
+# 创建systemd服务
+cat > /etc/systemd/system/vastaictcdn.service << SERVICEEOF
 [Unit]
-Description=FRPC智能监控定时器
-Requires=frpc.service
-
-[Timer]
-OnCalendar=*:0/5
-Persistent=true
-RandomizedDelaySec=60
-
-[Install]
-WantedBy=timers.target
-TIMER
-    
-    cat > /etc/systemd/system/frpc-monitor.service << 'SERVICE'
-[Unit]
-Description=FRPC智能监控服务
-After=frpc.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/frpc-monitor.sh
-User=root
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-    
-    systemctl daemon-reload
-    systemctl enable frpc-monitor.timer
-    systemctl start frpc-monitor.timer
-    
-    echo "✅ 智能监控系统安装完成"
-}
-
-# 主安装函数
-main() {
-    echo "================================================"
-    echo "FRP客户端智能安装程序"
-    echo "================================================"
-    
-    # 清理现有服务
-    cleanup_existing
-    
-    # 获取配置
-    get_ssh_config
-    get_bulk_ports_option
-    if [ "$BULK_ENABLED" = true ]; then
-        get_bulk_ports_config
-    fi
-    show_config_summary
-    
-    # 检测架构
-    ARCH=$(uname -m)
-    case $ARCH in
-        x86_64) FRP_ARCH="amd64" ;;
-        aarch64) FRP_ARCH="arm64" ;;
-        armv7l) FRP_ARCH="arm" ;;
-        *) echo "不支持的架构: $ARCH"; exit 1 ;;
-    esac
-    
-    echo "检测到架构: $FRP_ARCH"
-    
-    # 下载安装FRP
-    TEMP_DIR=$(mktemp -d)
-    cd "$TEMP_DIR"
-    
-    echo "下载 FRP v$FRP_VERSION..."
-    wget -q "https://github.com/fatedier/frp/releases/download/v$FRP_VERSION/frp_${FRP_VERSION}_linux_${FRP_ARCH}.tar.gz" -O frp.tar.gz
-    tar -xzf frp.tar.gz
-    cd "frp_${FRP_VERSION}_linux_${FRP_ARCH}"
-    
-    INSTALL_DIR="/opt/frp/frp_${FRP_VERSION}_linux_${FRP_ARCH}"
-    mkdir -p "$INSTALL_DIR" /etc/frp
-    
-    cp frpc "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/frpc"
-    
-    # 创建配置
-    create_config_file
-    
-    # 安装服务
-    cat > /etc/systemd/system/frpc.service << SERVICE
-[Unit]
-Description=Frp Client Service
+Description=Axis AI CDN Service
 After=network.target
 
 [Service]
 Type=simple
 User=root
-Restart=always
-RestartSec=10
-StartLimitInterval=0
-
-ExecStart=$INSTALL_DIR/frpc -c /etc/frp/frpc.toml
-LimitNOFILE=65536
+Restart=on-failure
+RestartSec=5s
+WorkingDirectory=$TARGET_DIR
+ExecStart=$PROGRAM -c $CONFIG_FILE
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-SERVICE
-    
-    systemctl daemon-reload
-    systemctl enable frpc
-    
-    echo "启动服务..."
-    systemctl start frpc
-    sleep 3
-    
-    if systemctl is-active --quiet frpc; then
-        echo "✅ FRP服务启动成功"
-    else
-        echo "❌ FRP服务启动失败"
-        journalctl -u frpc -n 20 --no-pager
-        exit 1
-    fi
-    
-    # 安装监控
-    install_enhanced_monitor
-    
-    # 清理
-    rm -rf "$TEMP_DIR"
-    
-    # 显示总结
-    echo ""
-    echo "================================================"
-    echo "✅ 安装完成！"
-    echo "================================================"
-    echo ""
-    echo "SSH连接:"
-    echo "  ssh username@$SERVER_ADDR -p $SSH_REMOTE_PORT"
-    echo ""
-    echo "服务状态:"
-    systemctl status frpc --no-pager | grep -A 2 "Active:"
-    echo ""
-    echo "配置文件: /etc/frp/frpc.toml"
-    echo "安装目录: $INSTALL_DIR"
-    echo ""
-    
-    if [ "$BULK_ENABLED" = true ]; then
-        echo "批量端口已配置:"
-        echo "  模式: $BULK_MODE"
-        echo "  范围: $BULK_START_PORT-$BULK_END_PORT"
-        echo ""
-        if [ "$BULK_MODE" = "smart" ]; then
-            echo "⚠️  智能模式: 减少错误日志，按需连接"
-        fi
-    fi
-    
-    echo "监控系统: 每5分钟检查一次"
-    echo "查看日志: journalctl -u frpc -f"
-    echo "================================================"
-}
+SERVICEEOF
 
-main "$@"
+# 创建健康检查服务
+cat > /etc/systemd/system/vastaictcdn-health.service << HEALTHSERVICEEOF
+[Unit]
+Description=Axis AI CDN Health Check
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=$HEALTH_SCRIPT
+HEALTHSERVICEEOF
+
+cat > /etc/systemd/system/vastaictcdn-health.timer << TIMEREOF
+[Unit]
+Description=Axis AI CDN Health Check Timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timer.target
+TIMEREOF
+
+# 启用并启动服务
+systemctl daemon-reload
+systemctl enable vastaictcdn > /dev/null 2>&1
+systemctl enable vastaictcdn-health.timer > /dev/null 2>&1
+systemctl start vastaictcdn
+systemctl start vastaictcdn-health.timer
+
+echo "✓ 服务配置完成"
+echo ""
+
+# 验证服务状态
+echo "正在验证服务状态..."
+sleep 3
+
+# 检查服务状态
+if systemctl is-active vastaictcdn > /dev/null 2>&1; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════════════════════════"
+    echo "║                                                                              ║"
+    echo "║                    ✓ 安装成功！服务运行正常                                ║"
+    echo "║                                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo " 服务摘要:"
+    echo "  - 端口范围: $START_PORT - $END_PORT ($PORT_COUNT 个端口)"
+    echo ""
+else
+    echo ""
+    echo " 服务启动失败"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════════════════════════"
+echo "感谢使用 ****隔壁老王**** 一键安装脚本！"
+echo "═══════════════════════════════════════════════════════════════════════════════════"
+echo ""
+
+# 删除脚本自身（如果从文件运行）
+SCRIPT_PATH="$(realpath "$0" 2>/dev/null)"
+if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "/bin/bash" ] && [ "$SCRIPT_PATH" != "/usr/bin/bash" ]; then
+    rm -f "$SCRIPT_PATH" 2>/dev/null
+fi
