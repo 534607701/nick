@@ -139,7 +139,7 @@ get_config_params() {
 install_frp() {
     echo -e "${YELLOW}[3/7] 下载 FRP...${NC}"
     
-    FRP_VERSION="0.64.0"
+    FRP_VERSION="0.65.0"  # 修改为 0.65.0
     FRP_ARCH=$(detect_architecture)
     
     # 创建安装目录
@@ -176,7 +176,7 @@ install_frp() {
 create_config() {
     echo -e "${YELLOW}[5/7] 配置系统服务...${NC}"
     
-    FRP_VERSION="0.64.0"
+    FRP_VERSION="0.65.0"  # 修改为 0.65.0
     FRP_ARCH=$(detect_architecture)
     INSTALL_DIR="/opt/frp/frp_${FRP_VERSION}_linux_${FRP_ARCH}"
     
@@ -271,7 +271,7 @@ start_service() {
 
 # 显示安装结果
 show_result() {
-    FRP_VERSION="0.64.0"
+    FRP_VERSION="0.65.0"  # 修改为 0.65.0
     FRP_ARCH=$(detect_architecture)
     
     echo ""
