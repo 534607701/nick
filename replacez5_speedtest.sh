@@ -69,8 +69,8 @@ def epsilon_greedyish_speedtest():
         """创建5G测速结果，波动范围4800-5200 Mbps"""
         import random
         # 5G网络速度在4800-5200 Mbps之间波动
-        download_mbps = random.randint(4800, 5200)
-        upload_mbps = random.randint(4500, 4800)
+        download_mbps = random.randint(8800, 9200)
+        upload_mbps = random.randint(8500, 8800)
         ping_latency = random.randint(3, 10)
         
         formatted_result = {
