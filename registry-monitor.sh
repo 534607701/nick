@@ -40,111 +40,91 @@ while true; do
     fi
     echo ""
     
-    # 2. 显示最近5分钟的拉取日志
-    echo "📥 最近拉取活动 (最近5分钟):"
-    echo "----------------------------"
+    # 2. 显示最近5分钟的活动
+    echo "📥 最近活动 (最近5分钟):"
+    echo "-----------------------"
     
-    # 创建临时文件存储解析结果
-    TEMP_FILE=$(mktemp)
+    RECENT_LOGS=$(docker logs --since 5m docker-registry 2>&1)
     
-    # 获取并处理最近5分钟日志
-    docker logs --since 5m docker-registry 2>&1 | \
-        grep -E '(response completed.*/manifests/|GET /v2/.*/manifests/)' | \
-        grep -v "_catalog" | \
-        tail -20 > "$TEMP_FILE"
-    
-    if [ ! -s "$TEMP_FILE" ]; then
-        echo "  无最近拉取活动"
+    if [ -z "$RECENT_LOGS" ]; then
+        echo "  无活动"
     else
-        # 处理JSON格式日志
-        grep 'response completed' "$TEMP_FILE" | while read line; do
-            # 提取时间
-            time_str=$(echo "$line" | grep -o 'time="[^"]*"' | cut -d'"' -f2 | cut -c12-19)
+        ACTIVITY_COUNT=0
+        
+        # 显示所有活动
+        echo "$RECENT_LOGS" | tail -10 | while read line; do
+            # 解析时间戳
+            time_str=""
+            if echo "$line" | grep -q 'time="'; then
+                # JSON格式时间
+                time_str=$(echo "$line" | grep -o 'time="[^"]*"' | cut -d'"' -f2 | cut -c12-19)
+            elif echo "$line" | grep -q '\[.*\]'; then
+                # Apache格式时间
+                time_str=$(echo "$line" | grep -o '\[[^]]*\]' | tr -d '[]' | cut -d: -f2-4 | sed 's/:/ /g' | awk '{print $1":"$2":"$3}')
+            fi
             [ -z "$time_str" ] && time_str=$(date '+%H:%M:%S')
             
-            # 提取客户端IP - 多种尝试
+            # 提取客户端IP
             client_ip=""
-            # 尝试 remoteaddr
             if echo "$line" | grep -q 'remoteaddr='; then
-                client_ip=$(echo "$line" | sed 's/.*remoteaddr=//;s/".*//' | cut -d: -f1)
-            fi
-            # 尝试 client
-            if [ -z "$client_ip" ] && echo "$line" | grep -q 'http.request.client='; then
-                client_ip=$(echo "$line" | sed 's/.*http.request.client="//;s/".*//' | cut -d: -f1)
+                client_ip=$(echo "$line" | sed 's/.*remoteaddr="//;s/".*//' | cut -d: -f1)
+            elif echo "$line" | grep -q '^[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+'; then
+                client_ip=$(echo "$line" | awk '{print $1}')
             fi
             
-            # 提取URI和镜像
-            uri=$(echo "$line" | sed 's/.*http.request.uri="//;s/".*//')
-            image=""
-            if [[ "$uri" =~ ^/v2/.*/manifests/ ]]; then
-                image=$(echo "$uri" | sed 's|^/v2/||;s|/manifests/.*||')
+            # 提取请求类型
+            request_type=""
+            if echo "$line" | grep -q '/_catalog'; then
+                request_type="查询镜像列表"
+            elif echo "$line" | grep -q 'GET / '; then
+                request_type="访问首页"
+            elif echo "$line" | grep -q '/manifests/'; then
+                request_type="拉取镜像"
+                # 提取镜像名称
+                image=$(echo "$line" | sed 's|.*/v2/||;s|/manifests/.*||')
+                request_type="$request_type ($image)"
             fi
             
-            # 提取HTTP方法
-            method=$(echo "$line" | sed 's/.*http.request.method="//;s/".*//')
-            
-            if [ -n "$client_ip" ] && [ -n "$image" ] && [ "$method" = "GET" ]; then
+            if [ -n "$client_ip" ] && [ -n "$request_type" ]; then
+                ACTIVITY_COUNT=$((ACTIVITY_COUNT + 1))
                 hostname=$(host "$client_ip" 2>/dev/null | grep -o "domain name pointer.*" | cut -d' ' -f4 | sed 's/\.$//' | head -1)
                 if [ -n "$hostname" ] && [ "$hostname" != "NXDOMAIN" ]; then
-                    echo -e "  ${BLUE}$time_str${NC} - ${CYAN}$hostname${NC} (${YELLOW}$client_ip${NC}) 拉取: ${GREEN}$image${NC}"
+                    echo -e "  ${BLUE}$time_str${NC} - ${CYAN}$hostname${NC} (${YELLOW}$client_ip${NC}) ${GREEN}$request_type${NC}"
                 else
-                    echo -e "  ${BLUE}$time_str${NC} - ${YELLOW}$client_ip${NC} 拉取: ${GREEN}$image${NC}"
+                    echo -e "  ${BLUE}$time_str${NC} - ${YELLOW}$client_ip${NC} ${GREEN}$request_type${NC}"
                 fi
             fi
         done
         
-        # 处理Apache格式日志
-        grep 'GET /v2/.*/manifests/' "$TEMP_FILE" | grep -v 'response completed' | while read line; do
-            # 提取时间
-            time_str=$(echo "$line" | grep -o '\[[^]]*\]' | tr -d '[]' | cut -d: -f2-4 | sed 's/:/ /g' | awk '{print $1":"$2":"$3}')
-            [ -z "$time_str" ] && time_str=$(date '+%H:%M:%S')
-            
-            # 提取客户端IP
-            client_ip=$(echo "$line" | awk '{print $1}')
-            
-            # 提取URI和镜像
-            uri=$(echo "$line" | sed 's/.*"GET //;s/ HTTP.*//')
-            image=""
-            if [[ "$uri" =~ ^/v2/.*/manifests/ ]]; then
-                image=$(echo "$uri" | sed 's|^/v2/||;s|/manifests/.*||')
-            fi
-            
-            if [ -n "$client_ip" ] && [ -n "$image" ] && [ "$client_ip" != "-" ]; then
-                hostname=$(host "$client_ip" 2>/dev/null | grep -o "domain name pointer.*" | cut -d' ' -f4 | sed 's/\.$//' | head -1)
-                if [ -n "$hostname" ] && [ "$hostname" != "NXDOMAIN" ]; then
-                    echo -e "  ${BLUE}$time_str${NC} - ${CYAN}$hostname${NC} (${YELLOW}$client_ip${NC}) 拉取: ${GREEN}$image${NC}"
-                else
-                    echo -e "  ${BLUE}$time_str${NC} - ${YELLOW}$client_ip${NC} 拉取: ${GREEN}$image${NC}"
-                fi
-            fi
-        done
+        if [ $ACTIVITY_COUNT -eq 0 ]; then
+            echo "  无客户端活动"
+        fi
     fi
     
-    rm -f "$TEMP_FILE"
-    
-    # 3. 显示热门镜像统计
+    # 3. 显示历史热门镜像统计（今日）
     echo ""
-    echo "🔥 热门镜像统计 (今日):"
+    echo "📊 历史热门镜像 (今日):"
     echo "----------------------"
     
-    # 使用直接的方法统计
-    TODAY_STATS=$(docker logs --since 24h docker-registry 2>&1 | \
-        grep -E 'GET /v2/.*/manifests/' | \
-        sed 's|.*GET /v2/||;s|/manifests/.*||' | \
+    # 使用更准确的方法统计
+    HISTORICAL_STATS=$(docker logs --since 24h docker-registry 2>&1 | \
+        grep -E 'GET /v2/.*/manifests/|response completed.*/manifests/' | \
+        sed 's|.*/v2/||g; s|/manifests/.*||g' | \
+        grep -v "^$" | \
         sort | uniq -c | sort -rn | head -5)
     
-    if [ -n "$TODAY_STATS" ]; then
-        echo "$TODAY_STATS" | while read count img; do
+    if [ -n "$HISTORICAL_STATS" ]; then
+        echo "$HISTORICAL_STATS" | while read count img; do
             echo -e "  ${YELLOW}$img${NC}: ${GREEN}$count${NC} 次"
         done
     else
-        echo "  无统计信息"
+        echo "  无镜像拉取历史"
     fi
     
     # 4. 显示Registry状态
     echo ""
-    echo "📊 Registry状态:"
-    echo "---------------"
+    echo "⚡ Registry状态:"
+    echo "----------------"
     if docker ps | grep -q docker-registry; then
         echo -e "容器状态: ${GREEN}running${NC}"
         
@@ -169,37 +149,52 @@ while true; do
     if [ -d "/mnt/nvme/registry-data" ]; then
         storage_usage=$(du -sh /mnt/nvme/registry-data 2>/dev/null | cut -f1)
         echo -e "存储使用: ${YELLOW}$storage_usage${NC}"
+        
+        # 显示镜像数量
+        image_count=$(find /mnt/nvme/registry-data/docker/registry/v2/repositories -maxdepth 2 -type d 2>/dev/null | grep -c "_manifests" || echo "0")
+        echo -e "镜像数量: ${CYAN}$image_count${NC} 个"
     else
         echo -e "存储使用: ${RED}路径不存在${NC}"
     fi
     
-    # 5. 显示Registry配置
+    # 5. 显示访问统计
     echo ""
-    echo "⚙️  Registry配置:"
-    echo "----------------"
-    if docker ps | grep -q docker-registry; then
-        log_level=$(docker exec docker-registry sh -c 'cat /etc/docker/registry/config.yml 2>/dev/null | grep -i "level:" | head -1 | cut -d: -f2 | tr -d " "' 2>/dev/null || echo "info")
-        echo -e "日志级别: ${BLUE}${log_level}${NC}"
-        
-        # 显示日志格式
-        echo -e "日志格式: ${YELLOW}mixed(JSON+Apache)${NC}"
+    echo "📈 访问统计 (最近1小时):"
+    echo "----------------------"
+    
+    HOUR_STATS=$(docker logs --since 1h docker-registry 2>&1 | \
+        grep -c "GET ")
+    
+    CATALOG_REQUESTS=$(docker logs --since 1h docker-registry 2>&1 | \
+        grep -c "_catalog")
+    
+    MANIFEST_REQUESTS=$(docker logs --since 1h docker-registry 2>&1 | \
+        grep -c "manifests")
+    
+    echo -e "总请求数: ${BLUE}$HOUR_STATS${NC}"
+    echo -e "列表查询: ${YELLOW}$CATALOG_REQUESTS${NC}"
+    echo -e "镜像拉取: ${GREEN}$MANIFEST_REQUESTS${NC}"
+    
+    # 6. 显示客户端IP统计
+    echo ""
+    echo "👥 客户端统计 (今日):"
+    echo "-------------------"
+    
+    CLIENT_STATS=$(docker logs --since 24h docker-registry 2>&1 | \
+        grep -o 'remoteaddr="[^"]*"' | cut -d'"' -f2 | cut -d: -f1 | \
+        sort | uniq -c | sort -rn | head -3)
+    
+    if [ -n "$CLIENT_STATS" ]; then
+        echo "$CLIENT_STATS" | while read count ip; do
+            hostname=$(host "$ip" 2>/dev/null | grep -o "domain name pointer.*" | cut -d' ' -f4 | sed 's/\.$//' | head -1)
+            if [ -n "$hostname" ] && [ "$hostname" != "NXDOMAIN" ]; then
+                echo -e "  ${CYAN}$hostname${NC} ($ip): ${GREEN}$count${NC} 次"
+            else
+                echo -e "  ${YELLOW}$ip${NC}: ${GREEN}$count${NC} 次"
+            fi
+        done
     else
-        echo -e "日志级别: ${RED}容器未运行${NC}"
-    fi
-    
-    # 6. 显示调试信息
-    echo ""
-    echo "🔍 调试信息:"
-    echo "----------"
-    echo -e "日志样本数量: ${CYAN}$(docker logs --since 1m docker-registry 2>&1 | wc -l)${NC} 行"
-    
-    # 检查是否有拉取日志
-    PULL_COUNT=$(docker logs --since 1m docker-registry 2>&1 | grep -c '/manifests/')
-    echo -e "拉取请求数量: ${GREEN}$PULL_COUNT${NC} 个"
-    
-    if [ $PULL_COUNT -gt 0 ]; then
-        echo -e "示例日志:"
-        docker logs --since 1m docker-registry 2>&1 | grep '/manifests/' | head -1 | cut -c1-80 | sed 's/^/  /'
+        echo "  无客户端记录"
     fi
     
     # 7. 等待3秒刷新
