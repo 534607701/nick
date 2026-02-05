@@ -2,9 +2,6 @@
 # /usr/local/bin/fan_smart_control.sh
 # 智能风扇控制系统 - 根据您的温度要求调整
 
-# 首先确保IPMI在手动模式
-sudo ipmitool raw 0x30 0x45 0x01 0x02 >/dev/null 2>&1
-
 # 温度阈值（摄氏度）
 TEMP_CRITICAL=80      # >80°C: 60%
 TEMP_HIGH=70          # >70°C: 50%
@@ -17,6 +14,20 @@ FAN_50="0x3C"   # 50% - 7400 RPM
 FAN_40="0x28"   # 40% - 4500 RPM
 FAN_30="0x1E"   # 30% - 估计值
 FAN_10="0x0A"   # 10% - 估计值
+
+# 获取当前风扇控制模式
+get_fan_mode() {
+    # 读取当前风扇模式 (0x01=手动, 0x02=自动)
+    MODE=$(sudo ipmitool raw 0x30 0x45 0x00 2>/dev/null | tr -d ' ' | tr -d '\n')
+    echo "$MODE"
+}
+
+# 设置风扇为手动模式
+set_manual_mode() {
+    echo "[$(date '+%H:%M:%S')] 设置风扇控制为手动模式..."
+    sudo ipmitool raw 0x30 0x45 0x01 0x02 >/dev/null 2>&1
+    sleep 1
+}
 
 # 获取最高GPU温度
 get_max_temp() {
@@ -34,6 +45,31 @@ set_all_fans() {
     sudo ipmitool raw 0x30 0x70 0x66 0x01 0x01 $speed >/dev/null 2>&1
     sudo ipmitool raw 0x30 0x70 0x66 0x01 0x02 $speed >/dev/null 2>&1
     sudo ipmitool raw 0x30 0x70 0x66 0x01 0x03 $speed >/dev/null 2>&1
+}
+
+# 检查并确保手动模式
+ensure_manual_mode() {
+    local current_mode=$(get_fan_mode)
+    local retries=3
+    
+    for i in $(seq 1 $retries); do
+        if [ "$current_mode" = "01" ] || [ "$current_mode" = "1" ]; then
+            return 0  # 已经是手动模式
+        else
+            echo "[$(date '+%H:%M:%S')] 当前风扇模式: $current_mode (非手动模式)"
+            set_manual_mode
+            sleep 2
+            current_mode=$(get_fan_mode)
+            
+            if [ "$current_mode" = "01" ] || [ "$current_mode" = "1" ]; then
+                echo "[$(date '+%H:%M:%S')] ✓ 风扇模式已成功设置为手动"
+                return 0
+            fi
+        fi
+    done
+    
+    echo "[$(date '+%H:%M:%S')] ✗ 警告: 无法设置为手动模式，继续运行但可能无效"
+    return 1
 }
 
 # 防止重复运行
@@ -58,8 +94,21 @@ echo "  >45°C: 30% (0x1E)"
 echo "  其他:   10% (0x0A)"
 echo "========================================"
 
+# 初始检查模式
+ensure_manual_mode
+
+# 添加定期模式检查的计数器
+MODE_CHECK_COUNT=0
 LAST_SPEED=""
+
 while true; do
+    # 每10次循环检查一次模式 (约每100秒)
+    MODE_CHECK_COUNT=$((MODE_CHECK_COUNT + 1))
+    if [ $MODE_CHECK_COUNT -ge 10 ]; then
+        ensure_manual_mode
+        MODE_CHECK_COUNT=0
+    fi
+    
     TEMP=$(get_max_temp)
     
     # 根据温度选择转速
