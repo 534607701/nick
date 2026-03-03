@@ -1,7 +1,7 @@
 #!/bin/bash
 
-set -euo pipefail  # 添加 -u 防止未定义变量，-o pipefail 管道错误传递
-trap 'cleanup $?' EXIT ERR INT TERM  # 添加清理函数
+set -euo pipefail
+trap 'cleanup $?' EXIT ERR INT TERM
 
 # 版本和配置
 readonly SCRIPT_VERSION="1.1.0"
@@ -33,51 +33,142 @@ cleanup() {
     local exit_code=$1
     if [[ $exit_code -ne 0 ]]; then
         log_warn "脚本异常退出 (退出码: $exit_code)"
-        # 清理临时文件
         rm -f /tmp/frp_*.tar.gz 2>/dev/null || true
     fi
 }
 
-# 检查依赖并自动安装
+# 检查依赖并自动安装（增强版）
 check_dependencies() {
     log_info "[1/7] 检查系统依赖..."
-    local deps=("wget" "tar" "systemctl" "curl" "grep")
-    local missing_deps=()
     
-    for dep in "${deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            missing_deps+=("$dep")
+    # 定义需要检查的命令和对应的包名
+    declare -A deps_map=(
+        ["wget"]="wget"
+        ["tar"]="tar"
+        ["curl"]="curl"
+        ["grep"]="grep"
+        ["systemctl"]="systemd"
+        ["ss"]="iproute2"
+    )
+    
+    local missing_deps=()
+    local missing_cmds=()
+    
+    # 检查每个命令是否存在
+    for cmd in "${!deps_map[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing_cmds+=("$cmd")
+            # 去重添加包名
+            local pkg="${deps_map[$cmd]}"
+            if [[ ! " ${missing_deps[@]} " =~ " ${pkg} " ]]; then
+                missing_deps+=("$pkg")
+            fi
         fi
     done
     
-    if [ ${#missing_deps[@]} -ne 0 ]; then
-        log_warn "发现缺少依赖: ${missing_deps[*]}"
-        if command -v apt-get &> /dev/null; then
-            log_info "正在使用 apt-get 安装依赖..."
-            apt-get update
-            apt-get install -y "${missing_deps[@]}"
-        elif command -v yum &> /dev/null; then
-            log_info "正在使用 yum 安装依赖..."
-            yum install -y "${missing_deps[@]}"
-        elif command -v dnf &> /dev/null; then
-            log_info "正在使用 dnf 安装依赖..."
-            dnf install -y "${missing_deps[@]}"
-        else
-            log_error "无法自动安装依赖，请手动安装: ${missing_deps[*]}"
-            exit 1
-        fi
+    # 如果没有缺失的依赖，直接返回
+    if [ ${#missing_deps[@]} -eq 0 ]; then
+        log_info "✓ 所有依赖已满足"
+        return 0
     fi
     
-    # 检查系统版本（用于兼容性提示）
-    if [ -f /etc/os-release ]; then
-        source /etc/os-release
-        log_debug "系统: $PRETTY_NAME"
+    # 有缺失的依赖，开始安装
+    log_warn "发现缺少命令: ${missing_cmds[*]}"
+    log_warn "需要安装包: ${missing_deps[*]}"
+    
+    # 检测包管理器并安装
+    local pkg_manager=""
+    local install_cmd=""
+    local update_cmd=""
+    
+    if command -v apt-get &> /dev/null; then
+        pkg_manager="apt-get"
+        update_cmd="apt-get update -y"
+        install_cmd="apt-get install -y"
+    elif command -v yum &> /dev/null; then
+        pkg_manager="yum"
+        update_cmd="yum makecache -y"
+        install_cmd="yum install -y"
+    elif command -v dnf &> /dev/null; then
+        pkg_manager="dnf"
+        update_cmd="dnf makecache -y"
+        install_cmd="dnf install -y"
+    elif command -v apk &> /dev/null; then
+        pkg_manager="apk"
+        update_cmd="apk update"
+        install_cmd="apk add"
+    else
+        log_error "无法自动安装依赖，支持的包管理器: apt-get, yum, dnf, apk"
+        log_error "请手动安装: ${missing_deps[*]}"
+        exit 1
+    fi
+    
+    log_info "检测到包管理器: $pkg_manager"
+    
+    # 更新软件源（带重试机制）
+    log_info "更新软件源..."
+    local max_retries=3
+    local retry_count=0
+    local update_success=false
+    
+    while [ $retry_count -lt $max_retries ] && [ "$update_success" = false ]; do
+        if eval "$update_cmd" &> /dev/null; then
+            update_success=true
+            log_info "✓ 软件源更新成功"
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                log_warn "软件源更新失败，$retry_count/$max_retries 次重试..."
+                sleep 3
+            fi
+        fi
+    done
+    
+    if [ "$update_success" = false ]; then
+        log_warn "软件源更新失败，尝试直接安装依赖..."
+    fi
+    
+    # 安装依赖（带重试机制）
+    log_info "开始安装依赖: ${missing_deps[*]}"
+    retry_count=0
+    local install_success=false
+    
+    while [ $retry_count -lt $max_retries ] && [ "$install_success" = false ]; do
+        if eval "$install_cmd ${missing_deps[*]}" &> /dev/null; then
+            install_success=true
+            log_info "✓ 依赖安装成功"
+        else
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                log_warn "依赖安装失败，$retry_count/$max_retries 次重试..."
+                sleep 3
+            fi
+        fi
+    done
+    
+    if [ "$install_success" = false ]; then
+        log_error "依赖安装失败，请手动安装: ${missing_deps[*]}"
+        exit 1
+    fi
+    
+    # 验证安装结果
+    local still_missing=()
+    for cmd in "${missing_cmds[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            still_missing+=("$cmd")
+        fi
+    done
+    
+    if [ ${#still_missing[@]} -ne 0 ]; then
+        log_error "安装后仍然缺失命令: ${still_missing[*]}"
+        log_error "请手动检查包名或安装"
+        exit 1
     fi
     
     log_info "✓ 依赖检查完成"
 }
 
-# 检查架构（增强版）
+# 检查架构
 detect_architecture() {
     local ARCH=$(uname -m)
     case $ARCH in
@@ -104,24 +195,19 @@ check_root() {
 # 检查端口占用
 check_port_available() {
     local port=$1
-    if ss -tuln | grep -q ":$port "; then
+    if command -v ss &> /dev/null && ss -tuln | grep -q ":$port "; then
         log_error "端口 $port 已被占用"
         ss -tuln | grep ":$port "
+        return 1
+    elif command -v netstat &> /dev/null && netstat -tuln | grep -q ":$port "; then
+        log_error "端口 $port 已被占用"
+        netstat -tuln | grep ":$port "
         return 1
     fi
     return 0
 }
 
-# 验证 IP 地址格式（用于后续增强）
-validate_ip() {
-    local ip=$1
-    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        return 0
-    fi
-    return 1
-}
-
-# 获取配置参数（增强验证）
+# 获取配置参数
 get_config_params() {
     log_info "[2/7] 配置 FRP 服务端参数"
     
@@ -156,7 +242,7 @@ get_config_params() {
         fi
     done
     
-    # 认证令牌 - 增强安全要求
+    # 认证令牌
     while true; do
         read -p "认证令牌 (token, 必须与客户端一致): " TOKEN
         if [[ ${#TOKEN} -lt 8 ]]; then
@@ -194,7 +280,7 @@ get_config_params() {
     read -p "仪表板用户名 (dashboardUser, 默认: $DEFAULT_DASHBOARD_USER): " DASHBOARD_USER
     DASHBOARD_USER=${DASHBOARD_USER:-$DEFAULT_DASHBOARD_USER}
     
-    # 仪表板密码 - 增强安全要求
+    # 仪表板密码
     while true; do
         read -s -p "仪表板密码 (dashboardPwd, 默认: $DEFAULT_DASHBOARD_PWD): " DASHBOARD_PWD
         echo
@@ -233,7 +319,7 @@ get_config_params() {
     fi
 }
 
-# 下载并安装 FRP（增强版）
+# 下载并安装 FRP
 install_frp() {
     log_info "[3/7] 下载 FRP..."
     
@@ -242,7 +328,7 @@ install_frp() {
     # 创建安装目录
     mkdir -p /opt/frp
     
-    # 备份旧配置（如果存在）
+    # 备份旧配置
     if [ -f "/opt/frp/frps.toml" ]; then
         local backup_file="/opt/frp/frps.toml.backup.$(date +%Y%m%d_%H%M%S)"
         log_info "备份旧配置到 $backup_file"
@@ -255,7 +341,7 @@ install_frp() {
         systemctl stop frps
     fi
     
-    # 清理旧版本（保留配置）
+    # 清理旧版本
     if [ -d "/opt/frp/frp_${FRP_VERSION}_linux_${FRP_ARCH}" ]; then
         log_warn "发现相同版本已安装"
         read -p "重新安装？(y/N): " reinstall
@@ -268,7 +354,7 @@ install_frp() {
     
     cd /opt/frp
     
-    # 下载 FRP（带重试机制）
+    # 下载 FRP
     local max_retries=3
     local retry_count=0
     local download_url="https://github.com/fatedier/frp/releases/download/v$FRP_VERSION/frp_${FRP_VERSION}_linux_${FRP_ARCH}.tar.gz"
@@ -315,13 +401,13 @@ install_frp() {
     log_info "✓ FRP 下载安装完成"
 }
 
-# 创建配置文件（同时支持命令行和配置文件）
+# 创建配置文件
 create_config() {
     log_info "[5/7] 配置系统服务..."
     
     local INSTALL_DIR="/opt/frp/current"
     
-    # 创建 TOML 配置文件（FRP 0.52.0+ 推荐使用）
+    # 创建 TOML 配置文件
     cat > "/opt/frp/frps.toml" << TOML
 # FRP 服务端配置文件
 # 生成时间: $(date)
@@ -348,13 +434,9 @@ transport.maxPoolCount = 5
 
 # 超时设置
 transport.tcpMuxKeepaliveInterval = 30
-
-# HTTP 代理设置（如果需要）
-# vhostHTTPPort = 80
-# vhostHTTPSPort = 443
 TOML
     
-    # 创建 systemd 服务文件（使用配置文件方式，更稳定）
+    # 创建 systemd 服务文件
     cat > /etc/systemd/system/frps.service << SERVICE
 [Unit]
 Description=Frp Server Service
@@ -403,7 +485,7 @@ SERVICE
     log_info "✓ 系统服务配置完成"
 }
 
-# 配置防火墙（增强版）
+# 配置防火墙
 configure_firewall() {
     log_info "[6/7] 配置防火墙..."
     
@@ -426,7 +508,7 @@ configure_firewall() {
         firewall_configured=true
     fi
     
-    # 检查 iptables（作为备选）
+    # 检查 iptables
     if command -v iptables &> /dev/null && ! $firewall_configured; then
         log_warn "检测到 iptables 但未配置规则，建议手动添加："
         log_warn "iptables -A INPUT -p tcp --dport $BIND_PORT -j ACCEPT"
@@ -438,7 +520,7 @@ configure_firewall() {
     fi
 }
 
-# 启动服务（增强版）
+# 启动服务
 start_service() {
     log_info "[7/7] 启动 FRP 服务..."
     
@@ -448,21 +530,20 @@ start_service() {
     # 启用服务
     systemctl enable frps
     
-    # 启动服务（带重试）
+    # 启动服务
     local max_retries=3
     local retry_count=0
     
     while [ $retry_count -lt $max_retries ]; do
         if systemctl start frps; then
-            # 等待服务完全启动
             sleep 3
             
-            # 检查服务状态
             if systemctl is-active --quiet frps; then
                 log_info "✓ FRP 服务端启动成功"
                 
-                # 验证服务可访问性
-                if ss -tuln | grep -q ":$BIND_PORT"; then
+                if command -v ss &> /dev/null && ss -tuln | grep -q ":$BIND_PORT"; then
+                    log_info "✓ 服务端口监听正常"
+                elif command -v netstat &> /dev/null && netstat -tuln | grep -q ":$BIND_PORT"; then
                     log_info "✓ 服务端口监听正常"
                 else
                     log_warn "服务端口未监听，请检查日志"
@@ -524,7 +605,7 @@ show_result() {
     
     # 显示服务状态
     log_info "=== 服务状态 ==="
-    systemctl status frps --no-pager
+    systemctl status frps --no-pager 2>/dev/null || echo "服务状态不可用"
     
     # 显示测试命令
     echo ""
@@ -534,32 +615,27 @@ show_result() {
 
 # 主安装函数
 main() {
-    # 显示帮助 - 先检查参数是否存在
-    if [[ $# -gt 0 ]] && [[ "$1" == "-h" || "$1" == "--help" ]]; then
-        echo "使用方法: $0 [选项]"
-        echo "选项:"
-        echo "  -d, --debug     启用调试模式"
-        echo "  -h, --help      显示此帮助"
-        echo "  -v, --version   显示版本信息"
-        exit 0
-    fi
-    
-    # 解析参数
-    while [[ $# -gt 0 ]]; do
+    # 处理帮助和版本参数
+    if [[ $# -gt 0 ]]; then
         case $1 in
-            -d|--debug)
-                DEBUG=true
-                shift
+            -h|--help)
+                echo "使用方法: $0 [选项]"
+                echo "选项:"
+                echo "  -d, --debug     启用调试模式"
+                echo "  -h, --help      显示此帮助"
+                echo "  -v, --version   显示版本信息"
+                exit 0
                 ;;
             -v|--version)
                 echo "版本: $SCRIPT_VERSION"
                 exit 0
                 ;;
-            *)
+            -d|--debug)
+                DEBUG=true
                 shift
                 ;;
         esac
-    done
+    fi
     
     check_root
     check_dependencies
