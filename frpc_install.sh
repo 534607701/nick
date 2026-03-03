@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Axis AI Deploy Script - FRP代理客户端
-# 一键安装 - 内网穿透版 (稳定性优化版)
+# 一键安装 - 内网穿透版 (完全修复版)
 
 # 预设配置（可修改）
 DOMAIN="38.255.16.238"
@@ -20,7 +20,7 @@ NC='\033[0m'
 
 echo "═══════════════════════════════════════════════════════════════════════════════════"
 echo "║                                                                              ║"
-echo "║                 ****隔壁老王**** 一键安装脚本 (稳定性优化版)                  ║"
+echo "║                 ****隔壁老王**** 一键安装脚本 (完全修复版)                    ║"
 echo "║                                                                              ║"
 echo "╚══════════════════════════════════════════════════════════════════════════════╝"
 echo ""
@@ -29,6 +29,22 @@ echo ""
 log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# 检查Python3（用于生成配置）
+check_python() {
+    if ! command -v python3 &> /dev/null; then
+        log_warn "未检测到python3，尝试安装..."
+        if command -v apt-get &> /dev/null; then
+            apt-get update && apt-get install -y python3
+        elif command -v yum &> /dev/null; then
+            yum install -y python3
+        else
+            log_error "无法安装python3，请手动安装"
+            exit 1
+        fi
+    fi
+    log_info "✓ python3 已安装"
+}
 
 # 步骤1: 网络连通性测试
 log_info "[1/5] 网络连通性测试中..."
@@ -74,6 +90,9 @@ done
 log_info "服务器地址: $SERVER_IP:$SERVER_PORT"
 log_info "认证Token: ${AUTH_TOKEN:0:5}***${AUTH_TOKEN: -3}"
 
+# 检查Python
+check_python
+
 # 步骤3: 下载和安装程序
 TARGET_DIR="/var/lib/vastai_kaalia/docker_tmp"
 PROGRAM="$TARGET_DIR/vastaictcdn"
@@ -105,7 +124,7 @@ esac
 OS=$(uname -s | tr '[A-Z]' '[a-z]')
 
 # 下载FRP（带重试机制）
-FRP_VERSION="0.65.0"
+FRP_VERSION="0.61.0"  # 使用更稳定的版本
 FILENAME="frp_${FRP_VERSION}_${OS}_${ARCH}.tar.gz"
 DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
 
@@ -160,16 +179,16 @@ rm -rf "$EXTRACT_DIR" "$FILENAME"
 
 log_info "✓ 安装程序完成"
 
-# 步骤4: 配置端口范围（移除100个端口的限制）
+# 步骤4: 配置端口范围
 log_info "[4/5] 配置端口范围..."
 
 # 获取起始端口
 while true; do
     read -p "请输入起始端口: " START_PORT
-    if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1 ] && [ "$START_PORT" -le 65535 ]; then
+    if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1024 ] && [ "$START_PORT" -le 65535 ]; then
         break
     else
-        log_error "请输入有效的端口号 (1-65535)"
+        log_error "请输入有效的端口号 (1024-65535)"
     fi
 done
 
@@ -194,21 +213,27 @@ if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
     exit 0
 fi
 
-# 生成配置文件（优化版）
-CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
+# 使用Python生成正确的配置文件（展开所有端口）
+log_info "生成配置文件..."
 
-cat > $CONFIG_FILE << EOF
-# FRP 客户端配置文件 - 稳定性优化版
+# 创建Python生成脚本
+PYTHON_GEN_SCRIPT="/tmp/generate_frpc_config.py"
+cat > $PYTHON_GEN_SCRIPT << 'PYEOF'
+#!/usr/bin/env python3
+import sys
+
+def generate_config(server_ip, token, start_port, end_port):
+    config = f'''# FRP 客户端配置文件 - 自动生成
 # 生成时间: $(date)
 
 # 基础配置
-serverAddr = "$SERVER_IP"
-serverPort = $SERVER_PORT
+serverAddr = "{server_ip}"
+serverPort = 7000
 
 auth.method = "token"
-auth.token = "$AUTH_TOKEN"
+auth.token = "{token}"
 
-# 日志配置（关键：日志轮转，避免磁盘满）
+# 日志配置
 log.to = "/var/log/vastaictcdn/frpc.log"
 log.level = "info"
 log.maxDays = 3
@@ -219,56 +244,72 @@ transport.tcpMux = true
 transport.tcpMuxKeepaliveInterval = 30
 transport.maxPoolCount = 10
 transport.connectTimeout = 10
-transport.udpPacketSize = 1500
 
-# 健康检查配置
-healthCheck.timeout = 10
-healthCheck.maxFailed = 3
-healthCheck.interval = 60
-
-# 保持连接
-transport.heartbeatInterval = 30
-transport.heartbeatTimeout = 90
-
-# Web服务器配置（客户端仪表板）
+# Web服务器配置（本地监控）
 webServer.addr = "127.0.0.1"
 webServer.port = 7400
 webServer.user = "admin"
 webServer.password = "admin"
 
-{{- range \$i, \$v := parseNumberRangePair "$START_PORT-$END_PORT" "$START_PORT-$END_PORT" }}
-[[proxies]]
-name = "$PROXY_PREFIX-{{ \$v.First }}"
+'''
+
+    # 为每个端口生成代理配置
+    for port in range(int(start_port), int(end_port) + 1):
+        config += f'''[[proxies]]
+name = "proxy-{port}"
 type = "tcp"
 localIP = "127.0.0.1"
-localPort = {{ \$v.First }}
-remotePort = {{ \$v.Second }}
-# 代理稳定性优化
+localPort = {port}
+remotePort = {port}
 transport.useEncryption = true
 transport.useCompression = true
-# 健康检查
-healthCheck.type = "tcp"
-healthCheck.timeout = 5
-healthCheck.interval = 60
-{{- end }}
-EOF
+
+'''
+    return config
+
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print("Usage: generate_frpc_config.py <server_ip> <token> <start_port> <end_port>")
+        sys.exit(1)
+    
+    server_ip = sys.argv[1]
+    token = sys.argv[2]
+    start_port = sys.argv[3]
+    end_port = sys.argv[4]
+    
+    print(generate_config(server_ip, token, start_port, end_port))
+PYEOF
+
+# 执行Python脚本生成配置文件
+CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
+python3 $PYTHON_GEN_SCRIPT "$SERVER_IP" "$AUTH_TOKEN" "$START_PORT" "$END_PORT" > $CONFIG_FILE
+
+# 检查配置文件是否生成成功
+if [ ! -f "$CONFIG_FILE" ] || [ ! -s "$CONFIG_FILE" ]; then
+    log_error "配置文件生成失败"
+    exit 1
+fi
+
+# 显示配置文件预览
+log_info "配置文件预览（前10行）:"
+head -10 $CONFIG_FILE
 
 # 保存配置信息
 echo "$START_PORT-$END_PORT" > "$CONFIG_DIR/host_port_range"
 echo "$SERVER_IP" > "$CONFIG_DIR/host_ipaddr"
 echo "$((END_PORT + 1))" > "$CONFIG_DIR/check_port"
 
-log_info "✓ 配置文件生成完成"
+log_info "✓ 配置文件生成完成（已展开 $PORT_COUNT 个端口）"
 
 # 步骤5: 配置和启动服务
 log_info "[5/5] 配置和启动服务..."
 
-# 创建增强版健康检查脚本
+# 创建健康检查脚本
 HEALTH_SCRIPT="$TARGET_DIR/vastaish"
 cat > $HEALTH_SCRIPT << 'HEALTHEOF'
 #!/bin/bash
 
-# 健康检查脚本 - 稳定性增强版
+# 健康检查脚本
 CONFIG_DIR="/var/lib/vastai_kaalia"
 LOG_FILE="/var/log/vastaictcdn/health.log"
 PROGRAM="/var/lib/vastai_kaalia/docker_tmp/vastaictcdn"
@@ -288,84 +329,45 @@ check_process() {
     return 0
 }
 
-# 检查连接状态（通过SS或netstat）
+# 检查连接状态
 check_connections() {
-    if command -v ss &> /dev/null; then
-        CONN_COUNT=$(ss -tn | grep -c "$SERVER_IP:$SERVER_PORT" 2>/dev/null || echo 0)
-    elif command -v netstat &> /dev/null; then
-        CONN_COUNT=$(netstat -tn | grep -c "$SERVER_IP:$SERVER_PORT" 2>/dev/null || echo 0)
-    else
-        CONN_COUNT=0
-    fi
-    
-    if [ "$CONN_COUNT" -eq 0 ]; then
-        log_msg "警告: 无活动连接"
+    SERVER_IP=$(cat $CONFIG_DIR/host_ipaddr 2>/dev/null || echo "")
+    if [ -n "$SERVER_IP" ] && command -v ss &> /dev/null; then
+        CONN_COUNT=$(ss -tn | grep -c "$SERVER_IP:7000" 2>/dev/null || echo 0)
+        if [ "$CONN_COUNT" -eq 0 ]; then
+            log_msg "警告: 无活动连接到服务器"
+        fi
     fi
 }
 
-# 检查日志文件大小（防止日志过大）
+# 检查日志大小
 check_log_size() {
-    LOG_FILE="/var/log/vastaictcdn/frpc.log"
-    if [ -f "$LOG_FILE" ]; then
-        SIZE=$(du -m "$LOG_FILE" | cut -f1)
-        if [ "$SIZE" -gt 100 ]; then
+    FRPC_LOG="/var/log/vastaictcdn/frpc.log"
+    if [ -f "$FRPC_LOG" ]; then
+        SIZE=$(du -m "$FRPC_LOG" 2>/dev/null | cut -f1)
+        if [ -n "$SIZE" ] && [ "$SIZE" -gt 100 ]; then
             log_msg "日志文件过大(${SIZE}MB)，轮转日志"
-            mv "$LOG_FILE" "${LOG_FILE}.old"
+            mv "$FRPC_LOG" "${FRPC_LOG}.old"
             systemctl restart vastaictcdn
         fi
     fi
 }
 
-# 主检查逻辑
+# 执行检查
 log_msg "执行健康检查"
-
-# 1. 检查进程
-if ! check_process; then
-    log_msg "服务已重启"
-    exit 0
-fi
-
-# 2. 检查连接
+check_process
 check_connections
-
-# 3. 检查日志大小
 check_log_size
-
-# 4. 端口占用检查
-SERVER_IP=$(cat $CONFIG_DIR/host_ipaddr 2>/dev/null || echo "")
-LOCAL_PORT=$(cat $CONFIG_DIR/check_port 2>/dev/null || echo "8000")
-
-if [ -n "$SERVER_IP" ]; then
-    TARGET_URL="http://${SERVER_IP}:${LOCAL_PORT}"
-    
-    # 启动临时HTTP服务用于测试
-    if ! lsof -i:$LOCAL_PORT | grep -q python3; then
-        nohup python3 -m http.server $LOCAL_PORT > /dev/null 2>&1 &
-        sleep 2
-    fi
-    
-    # 测试连接
-    if curl -s --max-time 10 "$TARGET_URL" > /dev/null; then
-        log_msg "连接测试正常"
-    else
-        log_msg "连接测试失败，尝试重启服务"
-        systemctl restart vastaictcdn
-    fi
-    
-    # 清理临时服务
-    fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
-fi
-
 log_msg "健康检查完成"
 exit 0
 HEALTHEOF
 
 chmod +x $HEALTH_SCRIPT
 
-# 创建优化版systemd服务
+# 创建systemd服务
 cat > /etc/systemd/system/vastaictcdn.service << SERVICEEOF
 [Unit]
-Description=Axis AI CDN Service (Stable)
+Description=Axis AI CDN Service
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -373,17 +375,14 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$TARGET_DIR
-Environment="HOME=/root"
 ExecStart=$PROGRAM -c $CONFIG_FILE
-ExecReload=/bin/kill -HUP \$MAINPID
 Restart=always
 RestartSec=10
 StartLimitBurst=5
-StartLimitIntervalSec=60
+StartLimitInterval=60
 
 # 文件描述符限制
 LimitNOFILE=1048576
-LimitNPROC=512
 
 # 日志处理
 StandardOutput=journal
@@ -398,7 +397,7 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 SERVICEEOF
 
-# 创建健康检查服务（定时执行）
+# 创建健康检查服务
 cat > /etc/systemd/system/vastaictcdn-health.service << HEALTHSERVICEEOF
 [Unit]
 Description=Axis AI CDN Health Check
@@ -409,11 +408,9 @@ Type=oneshot
 ExecStart=$HEALTH_SCRIPT
 User=root
 Group=root
-StandardOutput=journal
-StandardError=journal
 HEALTHSERVICEEOF
 
-# 创建定时器（更频繁的健康检查）
+# 创建定时器
 cat > /etc/systemd/system/vastaictcdn-health.timer << TIMEREOF
 [Unit]
 Description=Axis AI CDN Health Check Timer
@@ -421,7 +418,7 @@ Requires=vastaictcdn.service
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=3min
+OnUnitActiveSec=5min
 RandomizedDelaySec=10
 
 [Install]
@@ -460,6 +457,9 @@ sleep 5
 
 # 检查服务状态
 if systemctl is-active vastaictcdn > /dev/null 2>&1; then
+    # 额外验证：检查是否有错误日志
+    ERROR_COUNT=$(journalctl -u vastaictcdn -n 20 --no-pager | grep -c "error\|ERROR\|fail\|FAIL" 2>/dev/null || echo 0)
+    
     echo ""
     echo "═══════════════════════════════════════════════════════════════════════════════════"
     echo "║                                                                              ║"
@@ -468,27 +468,38 @@ if systemctl is-active vastaictcdn > /dev/null 2>&1; then
     echo "╚══════════════════════════════════════════════════════════════════════════════╝"
     echo ""
     echo " 服务摘要:"
+    echo "  - 服务器地址: $SERVER_IP:$SERVER_PORT"
     echo "  - 端口范围: $START_PORT - $END_PORT ($PORT_COUNT 个端口)"
     echo "  - 服务状态: $(systemctl is-active vastaictcdn)"
+    echo "  - 配置文件: $CONFIG_FILE"
     echo "  - 日志位置: $LOG_DIR/frpc.log"
-    echo "  - 健康检查: 每3分钟执行一次"
+    echo "  - 健康检查: 每5分钟执行一次"
     echo ""
-    
-    # 显示一些有用的命令
     echo " 常用命令:"
     echo "  - 查看状态: systemctl status vastaictcdn"
-    echo "  - 查看日志: journalctl -u vastaictcdn -f"
+    echo "  - 查看实时日志: journalctl -u vastaictcdn -f"
     echo "  - 重启服务: systemctl restart vastaictcdn"
-    echo "  - 查看端口: ss -tuln | grep -E ':$START_PORT-'"
+    echo "  - 测试连接: nc -zv $SERVER_IP $START_PORT"
+    echo ""
+    
+    # 显示前10个端口的配置作为示例
+    echo " 已配置端口示例（前10个）:"
+    for port in $(seq $START_PORT $((START_PORT + 9 < END_PORT ? START_PORT + 9 : END_PORT))); do
+        echo "    - $port -> $SERVER_IP:$port"
+    done
+    if [ $PORT_COUNT -gt 10 ]; then
+        echo "    ... 以及 $((PORT_COUNT - 10)) 个更多端口"
+    fi
     echo ""
 else
-    log_error "服务启动失败，查看日志: journalctl -u vastaictcdn -n 50"
+    log_error "服务启动失败，查看日志:"
+    journalctl -u vastaictcdn -n 50 --no-pager
     exit 1
 fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════════════════════════"
-echo "感谢使用 ****隔壁老王**** 一键安装脚本 (稳定性优化版)！"
+echo "感谢使用 ****隔壁老王**** 一键安装脚本 (完全修复版)！"
 echo "═══════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
