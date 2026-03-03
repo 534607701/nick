@@ -1,8 +1,7 @@
 #!/bin/bash
 
-# Axis AI Deploy Script - FRP代理服务器
-# 一键安装 - 内网穿透版
-# 优化版本 - 支持批量端口映射和多SSH映射
+# Axis AI Deploy Script - FRP代理客户端
+# 一键安装 - 内网穿透版 (稳定性优化版)
 
 # 预设配置（可修改）
 DOMAIN="107.174.186.233"
@@ -17,62 +16,35 @@ PROXY_PREFIX="proxy"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# 错误处理函数
-handle_error() {
-    echo -e "${RED}✗ 错误: $1${NC}"
-    exit 1
-}
-
-# 成功提示函数
-success_msg() {
-    echo -e "${GREEN}✓ $1${NC}"
-}
-
-# 警告提示函数
-warning_msg() {
-    echo -e "${YELLOW}⚠ $1${NC}"
-}
-
-# 信息提示函数
-info_msg() {
-    echo -e "${BLUE}ℹ $1${NC}"
-}
-
-# 检查命令是否存在
-check_command() {
-    command -v $1 >/dev/null 2>&1 || handle_error "需要 $1 命令，请先安装"
-}
+NC='\033[0m'
 
 echo "═══════════════════════════════════════════════════════════════════════════════════"
 echo "║                                                                              ║"
-echo "║                 ****隔壁老王**** 一键安装脚本 v2.0                           ║"
-echo "║                       （优化版 - 支持多SSH映射）                              ║"
+echo "║                 ****隔壁老王**** 一键安装脚本 (稳定性优化版)                  ║"
 echo "║                                                                              ║"
 echo "╚══════════════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# 检查必要命令
-check_command ping
-check_command wget || check_command curl || handle_error "需要 wget 或 curl"
+# 日志函数
+log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # 步骤1: 网络连通性测试
-info_msg "【步骤 1/5】网络连通性测试中..."
-echo ""
+log_info "[1/5] 网络连通性测试中..."
 
+# 网络连通性测试
 if ping -c 3 -W 3 $DOMAIN > /dev/null 2>&1; then
-    success_msg "网络连通性正常"
-    echo ""
+    log_info "✓ 网络连通性正常"
 else
-    warning_msg "网络连通性异常，但继续执行..."
-    echo ""
+    log_error "✗ 网络连通性异常"
+    log_error "无法连接到服务器域名: $DOMAIN"
+    log_error "请检查网络或域名解析"
+    exit 1
 fi
 
 # 步骤2: 获取服务器IP和Token
-info_msg "【步骤 2/5】获取服务器配置信息..."
-echo ""
+log_info "[2/5] 获取服务器配置信息..."
 
 # 获取服务器IP
 while true; do
@@ -81,128 +53,123 @@ while true; do
         if [[ $SERVER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             break
         else
-            echo -e "${RED}✗ 请输入有效的IP地址${NC}"
+            log_error "请输入有效的IP地址"
         fi
     else
-        echo -e "${RED}✗ 服务器IP不能为空${NC}"
+        log_error "服务器IP不能为空"
     fi
 done
 
 # 获取认证Token
 while true; do
-    read -p "请输入认证Token (默认: $AUTH_TOKEN): " INPUT_TOKEN
+    read -p "请输入认证Token: " INPUT_TOKEN
     if [ -n "$INPUT_TOKEN" ]; then
         AUTH_TOKEN="$INPUT_TOKEN"
         break
     else
-        # 使用默认值
-        break
+        log_error "Token不能为空"
     fi
 done
 
-echo ""
-info_msg "服务器地址: $SERVER_IP:$SERVER_PORT"
-info_msg "认证Token: ${AUTH_TOKEN:0:5}***${AUTH_TOKEN: -3}"
-echo ""
+log_info "服务器地址: $SERVER_IP:$SERVER_PORT"
+log_info "认证Token: ${AUTH_TOKEN:0:5}***${AUTH_TOKEN: -3}"
 
 # 步骤3: 下载和安装程序
 TARGET_DIR="/var/lib/vastai_kaalia/docker_tmp"
 PROGRAM="$TARGET_DIR/vastaictcdn"
 CONFIG_DIR="/var/lib/vastai_kaalia"
-CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
+LOG_DIR="/var/log/vastaictcdn"
 
-info_msg "【步骤 3/5】下载安装程序..."
+log_info "[3/5] 下载安装程序..."
 
-# 创建目录
-mkdir -p "$TARGET_DIR" "$CONFIG_DIR"
+# 创建必要目录
+mkdir -p "$TARGET_DIR" "$CONFIG_DIR" "$LOG_DIR"
 
 # 如果服务已在运行，先停止
 if systemctl is-active vastaictcdn > /dev/null 2>&1; then
-    info_msg "停止现有服务..."
+    log_info "停止现有服务..."
     systemctl stop vastaictcdn > /dev/null 2>&1
     sleep 2
-fi
-
-# 备份原有配置
-if [ -f "$CONFIG_FILE" ]; then
-    BACKUP_FILE="${CONFIG_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
-    cp "$CONFIG_FILE" "$BACKUP_FILE"
-    success_msg "原配置文件已备份到 $BACKUP_FILE"
 fi
 
 # 获取系统架构
 ARCH=$(uname -m)
 case $ARCH in
-    x86_64)
-        ARCH="amd64"
-        ;;
-    aarch64|arm64)
-        ARCH="arm64"
-        ;;
-    armv7l)
-        ARCH="arm"
-        ;;
-    *)
-        handle_error "不支持的架构: $ARCH"
-        ;;
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    armv7l) ARCH="arm" ;;
+    *) log_error "不支持的架构: $ARCH"; exit 1 ;;
 esac
 
 # 获取操作系统类型
 OS=$(uname -s | tr '[A-Z]' '[a-z]')
 
-# 下载FRP
+# 下载FRP（带重试机制）
 FRP_VERSION="0.65.0"
 FILENAME="frp_${FRP_VERSION}_${OS}_${ARCH}.tar.gz"
 DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
 
-info_msg "正在下载 FRP v${FRP_VERSION} for ${OS}_${ARCH}..."
+log_info "正在下载 FRP v$FRP_VERSION..."
+max_retries=3
+retry_count=0
+download_success=false
 
-if command -v wget &> /dev/null; then
-    wget --show-progress -q -O "$FILENAME" "$DOWNLOAD_URL" || handle_error "下载失败"
-elif command -v curl &> /dev/null; then
-    curl -# -L -o "$FILENAME" "$DOWNLOAD_URL" || handle_error "下载失败"
+while [ $retry_count -lt $max_retries ] && [ "$download_success" = false ]; do
+    if command -v wget &> /dev/null; then
+        if wget --timeout=30 -q -O "$FILENAME" "$DOWNLOAD_URL"; then
+            download_success=true
+        fi
+    elif command -v curl &> /dev/null; then
+        if curl --connect-timeout 30 -s -L -o "$FILENAME" "$DOWNLOAD_URL"; then
+            download_success=true
+        fi
+    else
+        log_error "需要wget或curl"
+        exit 1
+    fi
+    
+    if [ "$download_success" = false ]; then
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            log_warn "下载失败，${retry_count}/${max_retries} 次重试..."
+            sleep 3
+        fi
+    fi
+done
+
+if [ "$download_success" = false ]; then
+    log_error "下载失败，请检查网络连接"
+    exit 1
 fi
-success_msg "下载完成"
+
+log_info "✓ 下载完成"
 
 # 解压并安装
-info_msg "解压文件中..."
-tar -zxf "$FILENAME" > /dev/null 2>&1 || handle_error "解压失败"
-EXTRACT_DIR="frp_${FRP_VERSION}_${OS}_${ARCH}"
+log_info "解压文件中..."
+if ! tar -zxf "$FILENAME" > /dev/null 2>&1; then
+    log_error "解压失败，文件可能损坏"
+    exit 1
+fi
 
+EXTRACT_DIR="frp_${FRP_VERSION}_${OS}_${ARCH}"
 cp "$EXTRACT_DIR/frpc" "$PROGRAM"
 chmod +x "$PROGRAM"
 
-# 验证frpc
-$PROGRAM --version > /dev/null 2>&1 || handle_error "frpc 执行失败"
-success_msg "frpc 安装成功，版本: $($PROGRAM --version)"
-
 # 清理临时文件
 rm -rf "$EXTRACT_DIR" "$FILENAME"
-echo ""
 
-# 步骤4: 配置端口范围
-info_msg "【步骤 4/5】配置端口范围..."
-echo ""
+log_info "✓ 安装程序完成"
 
-# 检查端口是否被占用的函数
-check_local_port() {
-    local port=$1
-    if ss -tln 2>/dev/null | grep -q ":$port "; then
-        return 0  # 被占用
-    elif netstat -tln 2>/dev/null | grep -q ":$port "; then
-        return 0  # 被占用
-    else
-        return 1  # 空闲
-    fi
-}
+# 步骤4: 配置端口范围（移除100个端口的限制）
+log_info "[4/5] 配置端口范围..."
 
 # 获取起始端口
 while true; do
     read -p "请输入起始端口: " START_PORT
-    if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1024 ] && [ "$START_PORT" -le 65535 ]; then
+    if [[ "$START_PORT" =~ ^[0-9]+$ ]] && [ "$START_PORT" -ge 1 ] && [ "$START_PORT" -le 65535 ]; then
         break
     else
-        echo -e "${RED}✗ 请输入有效的端口号 (1024-65535，建议使用1024以上端口)${NC}"
+        log_error "请输入有效的端口号 (1-65535)"
     fi
 done
 
@@ -210,350 +177,228 @@ done
 while true; do
     read -p "请输入结束端口: " END_PORT
     if [[ "$END_PORT" =~ ^[0-9]+$ ]] && [ "$END_PORT" -ge "$START_PORT" ] && [ "$END_PORT" -le 65535 ]; then
-        PORT_COUNT=$((END_PORT - START_PORT + 1))
-        if [ $PORT_COUNT -gt 1000 ]; then
-            warning_msg "您正在映射 $PORT_COUNT 个端口，这可能影响性能"
-            read -p "是否继续? (y/n): " CONTINUE
-            if [[ "$CONTINUE" != "y" && "$CONTINUE" != "Y" ]]; then
-                continue
-            fi
-        fi
         break
     else
-        echo -e "${RED}✗ 结束端口必须大于等于起始端口且小于等于65535${NC}"
+        log_error "结束端口必须大于等于起始端口且小于等于65535"
     fi
 done
 
-# 检查本地端口占用
-info_msg "检查本地端口占用情况..."
-OCCUPIED_PORTS=""
-for ((port=$START_PORT; port<=$END_PORT; port+=100)); do
-    # 抽样检查，避免检查太多端口
-    if check_local_port $port; then
-        OCCUPIED_PORTS="$OCCUPIED_PORTS $port"
-    fi
-done
-
-if [ -n "$OCCUPIED_PORTS" ]; then
-    warning_msg "以下端口可能已被占用:$OCCUPIED_PORTS"
-    read -p "是否继续? (y/n): " CONTINUE
-    if [[ "$CONTINUE" != "y" && "$CONTINUE" != "Y" ]]; then
-        exit 0
-    fi
-fi
-
-# 步骤5: SSH端口映射配置（支持多个）
-echo ""
-info_msg "【SSH端口映射配置】"
-echo "支持配置多个SSH端口映射（例如：22->10022, 2222->20022）"
-read -p "是否配置SSH端口映射? (y/n，默认n): " CONFIG_SSH
-
-SSH_COUNT=0
-SSH_MAPPINGS_FILE="$CONFIG_DIR/ssh_mappings"
-> "$SSH_MAPPINGS_FILE"  # 清空文件
-
-if [[ "$CONFIG_SSH" == "y" || "$CONFIG_SSH" == "Y" ]]; then
-    while true; do
-        echo ""
-        info_msg "配置第 $((SSH_COUNT+1)) 个SSH映射（直接回车结束）"
-        
-        # 获取本地SSH端口
-        while true; do
-            read -p "请输入本地SSH端口 (留空结束): " LOCAL_SSH_PORT
-            if [ -z "$LOCAL_SSH_PORT" ]; then
-                break 2
-            fi
-            if [[ "$LOCAL_SSH_PORT" =~ ^[0-9]+$ ]] && [ "$LOCAL_SSH_PORT" -ge 1 ] && [ "$LOCAL_SSH_PORT" -le 65535 ]; then
-                # 检查本地SSH服务
-                if check_local_port $LOCAL_SSH_PORT; then
-                    success_msg "本地SSH端口 $LOCAL_SSH_PORT 似乎正在运行"
-                else
-                    warning_msg "本地端口 $LOCAL_SSH_PORT 可能没有SSH服务在运行"
-                fi
-                break
-            else
-                echo -e "${RED}✗ 请输入有效的端口号 (1-65535)${NC}"
-            fi
-        done
-        
-        # 获取远程SSH端口
-        while true; do
-            read -p "请输入远程SSH端口 (建议使用10000-60000): " REMOTE_SSH_PORT
-            if [[ "$REMOTE_SSH_PORT" =~ ^[0-9]+$ ]] && [ "$REMOTE_SSH_PORT" -ge 1024 ] && [ "$REMOTE_SSH_PORT" -le 65535 ]; then
-                # 检查端口是否在批量映射范围内
-                if [ "$REMOTE_SSH_PORT" -ge "$START_PORT" ] && [ "$REMOTE_SSH_PORT" -le "$END_PORT" ]; then
-                    warning_msg "远程SSH端口 $REMOTE_SSH_PORT 已在批量端口范围内"
-                    read -p "是否继续使用此端口? (y/n): " PORT_CONFIRM
-                    if [[ "$PORT_CONFIRM" != "y" && "$PORT_CONFIRM" != "Y" ]]; then
-                        continue
-                    fi
-                fi
-                break
-            else
-                echo -e "${RED}✗ 请输入有效的端口号 (1024-65535)${NC}"
-            fi
-        done
-        
-        # 保存映射
-        echo "${LOCAL_SSH_PORT}:${REMOTE_SSH_PORT}" >> "$SSH_MAPPINGS_FILE"
-        SSH_COUNT=$((SSH_COUNT + 1))
-        success_msg "SSH映射已添加: 本地:$LOCAL_SSH_PORT -> 远程:$REMOTE_SSH_PORT"
-    done
-    
-    if [ $SSH_COUNT -gt 0 ]; then
-        success_msg "共配置 $SSH_COUNT 个SSH映射"
-    fi
-fi
-
-echo ""
-info_msg "端口配置摘要:"
-echo "  - 端口范围: $START_PORT - $END_PORT"
-echo "  - 总端口数: $PORT_COUNT 个端口"
-if [ $SSH_COUNT -gt 0 ]; then
-    echo "  - SSH映射数: $SSH_COUNT 个"
-fi
-echo ""
+PORT_COUNT=$((END_PORT - START_PORT + 1))
+log_info "端口配置摘要:"
+log_info "  - 端口范围: $START_PORT - $END_PORT"
+log_info "  - 总端口数: $PORT_COUNT 个端口"
 
 read -p "确认配置? (y/n): " CONFIRM
 if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
-    info_msg "安装已取消"
+    log_warn "安装已取消"
     exit 0
 fi
-echo ""
 
-# 生成配置文件
-info_msg "生成FRP配置文件..."
+# 生成配置文件（优化版）
+CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
 
 cat > $CONFIG_FILE << EOF
-# FRP客户端配置文件
-# 生成时间: $(date '+%Y-%m-%d %H:%M:%S')
+# FRP 客户端配置文件 - 稳定性优化版
+# 生成时间: $(date)
 
+# 基础配置
 serverAddr = "$SERVER_IP"
 serverPort = $SERVER_PORT
 
 auth.method = "token"
 auth.token = "$AUTH_TOKEN"
 
-# 管理面板配置
-webServer.addr = "0.0.0.0"
-webServer.port = $WEB_PORT
-webServer.user = "$WEB_USER"
-webServer.password = "$WEB_PASSWORD"
-webServer.pprofEnable = false
-
-# 日志配置
-log.to = "console"
+# 日志配置（关键：日志轮转，避免磁盘满）
+log.to = "/var/log/vastaictcdn/frpc.log"
 log.level = "info"
 log.maxDays = 3
 
-EOF
+# 连接稳定性优化
+transport.protocol = "tcp"
+transport.tcpMux = true
+transport.tcpMuxKeepaliveInterval = 30
+transport.maxPoolCount = 10
+transport.connectTimeout = 10
+transport.udpPacketSize = 1500
 
-# 添加SSH映射
-if [ $SSH_COUNT -gt 0 ]; then
-    cat >> $CONFIG_FILE << EOF
-# SSH端口映射配置
-EOF
-    INDEX=1
-    while IFS=':' read -r local_port remote_port; do
-        if [ -n "$local_port" ] && [ -n "$remote_port" ]; then
-            cat >> $CONFIG_FILE << EOF
+# 健康检查配置
+healthCheck.timeout = 10
+healthCheck.maxFailed = 3
+healthCheck.interval = 60
 
+# 保持连接
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+# Web服务器配置（客户端仪表板）
+webServer.addr = "127.0.0.1"
+webServer.port = 7400
+webServer.user = "admin"
+webServer.password = "admin"
+
+{{- range \$i, \$v := parseNumberRangePair "$START_PORT-$END_PORT" "$START_PORT-$END_PORT" }}
 [[proxies]]
-name = "ssh-tunnel-${remote_port}"
+name = "$PROXY_PREFIX-{{ \$v.First }}"
 type = "tcp"
 localIP = "127.0.0.1"
-localPort = ${local_port}
-remotePort = ${remote_port}
-useEncryption = true
-useCompression = true
-
+localPort = {{ \$v.First }}
+remotePort = {{ \$v.Second }}
+# 代理稳定性优化
+transport.useEncryption = true
+transport.useCompression = true
+# 健康检查
+healthCheck.type = "tcp"
+healthCheck.timeout = 5
+healthCheck.interval = 60
+{{- end }}
 EOF
-        fi
-        INDEX=$((INDEX + 1))
-    done < "$SSH_MAPPINGS_FILE"
-fi
-
-# 添加批量端口映射
-cat >> $CONFIG_FILE << EOF
-# 批量端口映射 (${START_PORT}-${END_PORT})
-EOF
-
-for ((port=$START_PORT; port<=$END_PORT; port++)); do
-    cat >> $CONFIG_FILE << EOF
-
-[[proxies]]
-name = "${PROXY_PREFIX}-${port}"
-type = "tcp"
-localIP = "127.0.0.1"
-localPort = ${port}
-remotePort = ${port}
-useEncryption = true
-useCompression = true
-
-EOF
-done
-
-# 验证配置文件
-$PROGRAM -c $CONFIG_FILE --verify > /dev/null 2>&1
-if [ $? -eq 0 ]; then
-    success_msg "配置文件验证通过"
-else
-    warning_msg "配置文件验证失败，但将继续"
-fi
 
 # 保存配置信息
 echo "$START_PORT-$END_PORT" > "$CONFIG_DIR/host_port_range"
 echo "$SERVER_IP" > "$CONFIG_DIR/host_ipaddr"
 echo "$((END_PORT + 1))" > "$CONFIG_DIR/check_port"
 
-success_msg "配置文件生成完成"
-echo ""
+log_info "✓ 配置文件生成完成"
 
-# 步骤6: 配置和启动服务
-info_msg "【步骤 5/5】配置和启动服务..."
+# 步骤5: 配置和启动服务
+log_info "[5/5] 配置和启动服务..."
 
-# 创建健康检查脚本
+# 创建增强版健康检查脚本
 HEALTH_SCRIPT="$TARGET_DIR/vastaish"
 cat > $HEALTH_SCRIPT << 'HEALTHEOF'
 #!/bin/bash
-CONFIG_DIR="/var/lib/vastai_kaalia"
-LOG_FILE="/var/log/vastaictcdn-health.log"
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> $LOG_FILE
+# 健康检查脚本 - 稳定性增强版
+CONFIG_DIR="/var/lib/vastai_kaalia"
+LOG_FILE="/var/log/vastaictcdn/health.log"
+PROGRAM="/var/lib/vastai_kaalia/docker_tmp/vastaictcdn"
+
+# 日志函数
+log_msg() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
-SERVER_IP=$(cat $CONFIG_DIR/host_ipaddr 2>/dev/null || echo "")
-LOCAL_PORT=$(cat $CONFIG_DIR/check_port 2>/dev/null || echo "8000")
+# 检查服务进程
+check_process() {
+    if ! pgrep -f "vastaictcdn" > /dev/null; then
+        log_msg "服务进程不存在，重启服务"
+        systemctl restart vastaictcdn
+        return 1
+    fi
+    return 0
+}
 
-if [ -z "$SERVER_IP" ]; then
-    log "错误: 无法读取服务器IP"
-    exit 1
-fi
+# 检查连接状态（通过SS或netstat）
+check_connections() {
+    if command -v ss &> /dev/null; then
+        CONN_COUNT=$(ss -tn | grep -c "$SERVER_IP:$SERVER_PORT" 2>/dev/null || echo 0)
+    elif command -v netstat &> /dev/null; then
+        CONN_COUNT=$(netstat -tn | grep -c "$SERVER_IP:$SERVER_PORT" 2>/dev/null || echo 0)
+    else
+        CONN_COUNT=0
+    fi
+    
+    if [ "$CONN_COUNT" -eq 0 ]; then
+        log_msg "警告: 无活动连接"
+    fi
+}
 
-TARGET_URL="http://${SERVER_IP}:${LOCAL_PORT}"
-MAX_RETRIES=3
-RETRY_INTERVAL=5
+# 检查日志文件大小（防止日志过大）
+check_log_size() {
+    LOG_FILE="/var/log/vastaictcdn/frpc.log"
+    if [ -f "$LOG_FILE" ]; then
+        SIZE=$(du -m "$LOG_FILE" | cut -f1)
+        if [ "$SIZE" -gt 100 ]; then
+            log_msg "日志文件过大(${SIZE}MB)，轮转日志"
+            mv "$LOG_FILE" "${LOG_FILE}.old"
+            systemctl restart vastaictcdn
+        fi
+    fi
+}
 
-# 启动临时HTTP服务器
-if ! lsof -i:$LOCAL_PORT | grep -q python3; then
-    nohup python3 -m http.server $LOCAL_PORT > /dev/null 2>&1 &
-    sleep 2
-fi
+# 主检查逻辑
+log_msg "执行健康检查"
 
-# 测试连接
-if curl -s --max-time 5 "$TARGET_URL" > /dev/null; then
-    log "健康检查通过"
-    fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
+# 1. 检查进程
+if ! check_process; then
+    log_msg "服务已重启"
     exit 0
 fi
 
-# 重试
-success=false
-for ((i=1; i<=MAX_RETRIES; i++)); do
-    log "重试 $i/$MAX_RETRIES..."
-    sleep $RETRY_INTERVAL
-    if curl -s --max-time 5 "$TARGET_URL" > /dev/null; then
-        success=true
-        break
-    fi
-done
+# 2. 检查连接
+check_connections
 
-if [ "$success" = false ]; then
-    log "健康检查失败，重启服务"
-    systemctl restart vastaictcdn
+# 3. 检查日志大小
+check_log_size
+
+# 4. 端口占用检查
+SERVER_IP=$(cat $CONFIG_DIR/host_ipaddr 2>/dev/null || echo "")
+LOCAL_PORT=$(cat $CONFIG_DIR/check_port 2>/dev/null || echo "8000")
+
+if [ -n "$SERVER_IP" ]; then
+    TARGET_URL="http://${SERVER_IP}:${LOCAL_PORT}"
+    
+    # 启动临时HTTP服务用于测试
+    if ! lsof -i:$LOCAL_PORT | grep -q python3; then
+        nohup python3 -m http.server $LOCAL_PORT > /dev/null 2>&1 &
+        sleep 2
+    fi
+    
+    # 测试连接
+    if curl -s --max-time 10 "$TARGET_URL" > /dev/null; then
+        log_msg "连接测试正常"
+    else
+        log_msg "连接测试失败，尝试重启服务"
+        systemctl restart vastaictcdn
+    fi
+    
+    # 清理临时服务
+    fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
 fi
 
-fuser -k ${LOCAL_PORT}/tcp 2>/dev/null
+log_msg "健康检查完成"
+exit 0
 HEALTHEOF
 
 chmod +x $HEALTH_SCRIPT
 
-# 创建SSH健康检查脚本
-if [ $SSH_COUNT -gt 0 ]; then
-    SSH_HEALTH_SCRIPT="$TARGET_DIR/vastaissh"
-    cat > $SSH_HEALTH_SCRIPT << 'SSHHEALTHEOF'
-#!/bin/bash
-CONFIG_DIR="/var/lib/vastai_kaalia"
-LOG_FILE="/var/log/vastaissh-health.log"
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> $LOG_FILE
-}
-
-if [ -f "$CONFIG_DIR/ssh_mappings" ]; then
-    while IFS=':' read -r local_port remote_port; do
-        if [ -n "$local_port" ] && [ -n "$remote_port" ]; then
-            # 检查本地SSH服务
-            if ss -tln 2>/dev/null | grep -q ":$local_port " || netstat -tln 2>/dev/null | grep -q ":$local_port "; then
-                log "SSH端口 $local_port 正常"
-            else
-                log "警告: SSH服务没有在端口 $local_port 上运行"
-                # 尝试重启SSH服务
-                if systemctl is-active sshd >/dev/null 2>&1; then
-                    systemctl restart sshd
-                    log "已重启 sshd 服务"
-                elif systemctl is-active ssh >/dev/null 2>&1; then
-                    systemctl restart ssh
-                    log "已重启 ssh 服务"
-                fi
-            fi
-        fi
-    done < "$CONFIG_DIR/ssh_mappings"
-fi
-SSHHEALTHEOF
-    chmod +x $SSH_HEALTH_SCRIPT
-    
-    # 创建SSH健康检查定时器
-    cat > /etc/systemd/system/vastaissh-health.service << SSHHEALTHSERVICEEOF
-[Unit]
-Description=Axis AI SSH Health Check
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=$SSH_HEALTH_SCRIPT
-SSHHEALTHSERVICEEOF
-
-    cat > /etc/systemd/system/vastaissh-health.timer << SSHTIMEREOF
-[Unit]
-Description=Axis AI SSH Health Check Timer
-
-[Timer]
-OnBootSec=3min
-OnUnitActiveSec=10min
-
-[Install]
-WantedBy=timer.target
-SSHTIMEREOF
-fi
-
-# 创建systemd服务
+# 创建优化版systemd服务
 cat > /etc/systemd/system/vastaictcdn.service << SERVICEEOF
 [Unit]
-Description=Axis AI CDN Service
-After=network.target
-Wants=network.target
+Description=Axis AI CDN Service (Stable)
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-Restart=always
-RestartSec=10s
-StartLimitBurst=5
-StartLimitIntervalSec=60
 WorkingDirectory=$TARGET_DIR
+Environment="HOME=/root"
 ExecStart=$PROGRAM -c $CONFIG_FILE
 ExecReload=/bin/kill -HUP \$MAINPID
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# 文件描述符限制
+LimitNOFILE=1048576
+LimitNPROC=512
+
+# 日志处理
 StandardOutput=journal
 StandardError=journal
-LimitNOFILE=65536
+SyslogIdentifier=vastaictcdn
+
+# 超时设置
+TimeoutStartSec=30
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
 SERVICEEOF
 
-# 创建健康检查服务
+# 创建健康检查服务（定时执行）
 cat > /etc/systemd/system/vastaictcdn-health.service << HEALTHSERVICEEOF
 [Unit]
 Description=Axis AI CDN Health Check
@@ -562,24 +407,30 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=$HEALTH_SCRIPT
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
 HEALTHSERVICEEOF
 
+# 创建定时器（更频繁的健康检查）
 cat > /etc/systemd/system/vastaictcdn-health.timer << TIMEREOF
 [Unit]
 Description=Axis AI CDN Health Check Timer
+Requires=vastaictcdn.service
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
+OnBootSec=1min
+OnUnitActiveSec=3min
 RandomizedDelaySec=10
 
 [Install]
-WantedBy=timer.target
+WantedBy=timers.target
 TIMEREOF
 
-# 创建logrotate配置
+# 创建日志轮转配置
 cat > /etc/logrotate.d/vastaictcdn << LOGROTATEEOF
-/var/log/vastaictcdn*.log {
+/var/log/vastaictcdn/*.log {
     daily
     rotate 7
     compress
@@ -589,7 +440,7 @@ cat > /etc/logrotate.d/vastaictcdn << LOGROTATEEOF
     create 644 root root
     sharedscripts
     postrotate
-        systemctl kill -s HUP vastaictcdn.service
+        systemctl kill -s HUP vastaictcdn.service || true
     endscript
 }
 LOGROTATEEOF
@@ -601,77 +452,43 @@ systemctl enable vastaictcdn-health.timer > /dev/null 2>&1
 systemctl start vastaictcdn.service
 systemctl start vastaictcdn-health.timer
 
-if [ $SSH_COUNT -gt 0 ]; then
-    systemctl enable vastaissh-health.timer > /dev/null 2>&1
-    systemctl start vastaissh-health.timer
-fi
-
-success_msg "服务配置完成"
-echo ""
+log_info "✓ 服务配置完成"
 
 # 验证服务状态
-info_msg "正在验证服务状态..."
+log_info "正在验证服务状态..."
 sleep 5
 
-if systemctl is-active vastaictcdn.service > /dev/null 2>&1; then
+# 检查服务状态
+if systemctl is-active vastaictcdn > /dev/null 2>&1; then
     echo ""
     echo "═══════════════════════════════════════════════════════════════════════════════════"
-    echo -e "${GREEN}║                    ✓ 安装成功！服务运行正常                                ║${NC}"
-    echo "═══════════════════════════════════════════════════════════════════════════════════"
+    echo "║                                                                              ║"
+    echo "║                    ✓ 安装成功！服务运行正常                                ║"
+    echo "║                                                                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
     echo ""
     echo " 服务摘要:"
-    echo "  - 服务器地址: $SERVER_IP:$SERVER_PORT"
     echo "  - 端口范围: $START_PORT - $END_PORT ($PORT_COUNT 个端口)"
-    if [ $SSH_COUNT -gt 0 ]; then
-        echo "  - SSH映射数量: $SSH_COUNT 个"
-        echo ""
-        echo " SSH连接命令:"
-        while IFS=':' read -r local_port remote_port; do
-            if [ -n "$local_port" ] && [ -n "$remote_port" ]; then
-                echo "   ssh -p $remote_port user@$SERVER_IP  (本地端口:$local_port)"
-            fi
-        done < "$SSH_MAPPINGS_FILE"
-    fi
+    echo "  - 服务状态: $(systemctl is-active vastaictcdn)"
+    echo "  - 日志位置: $LOG_DIR/frpc.log"
+    echo "  - 健康检查: 每3分钟执行一次"
+    echo ""
+    
+    # 显示一些有用的命令
+    echo " 常用命令:"
+    echo "  - 查看状态: systemctl status vastaictcdn"
+    echo "  - 查看日志: journalctl -u vastaictcdn -f"
+    echo "  - 重启服务: systemctl restart vastaictcdn"
+    echo "  - 查看端口: ss -tuln | grep -E ':$START_PORT-'"
     echo ""
 else
-    echo -e "${RED}"
-    echo " 服务启动失败，查看日志:"
-    echo " journalctl -u vastaictcdn.service -n 50 --no-pager"
-    echo -e "${NC}"
+    log_error "服务启动失败，查看日志: journalctl -u vastaictcdn -n 50"
     exit 1
 fi
 
-# 显示使用说明
 echo ""
 echo "═══════════════════════════════════════════════════════════════════════════════════"
-echo "使用说明:"
-echo "═══════════════════════════════════════════════════════════════════════════════════"
-echo ""
-echo "1. Web管理界面: http://localhost:$WEB_PORT"
-echo "   用户名: $WEB_USER"
-echo "   密码: $WEB_PASSWORD"
-echo ""
-echo "2. 服务管理命令:"
-echo "   - 查看状态: systemctl status vastaictcdn.service"
-echo "   - 重启服务: systemctl restart vastaictcdn.service"
-echo "   - 查看日志: journalctl -u vastaictcdn.service -f"
-echo "   - 重载配置: systemctl reload vastaictcdn.service"
-echo ""
-echo "3. 配置文件位置: $CONFIG_FILE"
-echo "4. 日志文件: /var/log/vastaictcdn*.log"
-echo ""
-echo "5. 防火墙配置（如果需要）:"
-echo "   firewall-cmd --add-port=$START_PORT-$END_PORT/tcp --permanent"
-echo "   firewall-cmd --reload"
-echo ""
-
-if [ $SSH_COUNT -gt 0 ]; then
-    echo "6. SSH健康检查日志: /var/log/vastaissh-health.log"
-    echo ""
-fi
-
-echo "═══════════════════════════════════════════════════════════════════════════════════"
-echo -e "${GREEN}感谢使用 ****隔壁老王**** 一键安装脚本 v2.0！${NC}"
+echo "感谢使用 ****隔壁老王**** 一键安装脚本 (稳定性优化版)！"
 echo "═══════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
