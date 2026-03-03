@@ -4,7 +4,7 @@
 # 一键安装 - 内网穿透版 (稳定性优化版)
 
 # 预设配置（可修改）
-DOMAIN="107.174.186.233"
+DOMAIN="38.255.16.238"
 SERVER_PORT=7000
 AUTH_TOKEN="qazwsx123.0"
 WEB_PORT=7500
