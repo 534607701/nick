@@ -407,7 +407,7 @@ create_config() {
     
     local INSTALL_DIR="/opt/frp/current"
     
-    # 创建 TOML 配置文件
+    # 创建 TOML 配置文件（已添加 webServer.addr = "0.0.0.0"）
     cat > "/opt/frp/frps.toml" << TOML
 # FRP 服务端配置文件
 # 生成时间: $(date)
@@ -418,7 +418,8 @@ bindPort = $BIND_PORT
 auth.method = "token"
 auth.token = "$TOKEN"
 
-# 仪表板配置
+# 仪表板配置 - 已开放外网访问（0.0.0.0 允许从任何IP访问）
+webServer.addr = "0.0.0.0"
 webServer.port = $DASHBOARD_PORT
 webServer.user = "$DASHBOARD_USER"
 webServer.password = "$DASHBOARD_PWD"
