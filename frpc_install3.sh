@@ -4,13 +4,14 @@
 # 一键安装 - 内网穿透版 (带22端口映射)
 
 # 预设配置（可修改）
-DOMAIN="107.174.186.233"
+DOMAIN="209.146.116.106"
 SERVER_PORT=7000
 AUTH_TOKEN="qazwsx123.0"
 WEB_PORT=7500
 WEB_USER="admin"
 WEB_PASSWORD="admin"
 PROXY_PREFIX="proxy"
+SERVER_IP="209.146.116.106"  # 预设服务器IP
 
 # 颜色定义
 RED='\033[0;31m'
@@ -33,7 +34,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_highlight() { echo -e "${BLUE}[SSH]${NC} $1"; }
 
 # 步骤1: 网络连通性测试
-log_info "[1/6] 网络连通性测试中..."
+log_info "[1/4] 网络连通性测试中..."
 if ping -c 3 -W 3 $DOMAIN > /dev/null 2>&1; then
     log_info "✓ 网络连通性正常"
 else
@@ -41,39 +42,8 @@ else
     exit 1
 fi
 
-# 步骤2: 获取服务器IP和Token
-log_info "[2/6] 获取服务器配置信息..."
-
-# 获取服务器IP
-while true; do
-    read -p "请输入服务器IP地址: " SERVER_IP
-    if [ -n "$SERVER_IP" ]; then
-        if [[ $SERVER_IP =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            break
-        else
-            log_error "请输入有效的IP地址"
-        fi
-    else
-        log_error "服务器IP不能为空"
-    fi
-done
-
-# 获取认证Token
-while true; do
-    read -p "请输入认证Token: " INPUT_TOKEN
-    if [ -n "$INPUT_TOKEN" ]; then
-        AUTH_TOKEN="$INPUT_TOKEN"
-        break
-    else
-        log_error "Token不能为空"
-    fi
-done
-
-log_info "服务器地址: $SERVER_IP:$SERVER_PORT"
-log_info "认证Token: ${AUTH_TOKEN:0:5}***${AUTH_TOKEN: -3}"
-
-# 步骤3: SSH端口映射配置（新增）
-log_highlight "[3/6] 配置SSH远程访问端口..."
+# 步骤2: SSH端口映射配置
+log_highlight "[2/4] 配置SSH远程访问端口..."
 
 echo ""
 echo "你可以通过FRP映射本机的22端口（SSH），实现远程SSH访问这台机器。"
@@ -100,77 +70,8 @@ done
 log_highlight "SSH映射配置: 访问 ${SERVER_IP}:${SSH_REMOTE_PORT} 将转发到本机的22端口"
 echo ""
 
-# 步骤4: 下载和安装程序
-TARGET_DIR="/var/lib/vastai_kaalia/docker_tmp"
-PROGRAM="$TARGET_DIR/vastaictcdn"
-CONFIG_DIR="/var/lib/vastai_kaalia"
-LOG_DIR="/var/log/vastaictcdn"
-
-log_info "[4/6] 下载安装程序..."
-
-# 创建必要目录
-mkdir -p "$TARGET_DIR" "$CONFIG_DIR" "$LOG_DIR"
-
-# 如果服务已在运行，先停止
-if systemctl is-active vastaictcdn > /dev/null 2>&1; then
-    log_info "停止现有服务..."
-    systemctl stop vastaictcdn > /dev/null 2>&1
-    sleep 2
-fi
-
-# 获取系统架构
-ARCH=$(uname -m)
-case $ARCH in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    armv7l) ARCH="arm" ;;
-    *) log_error "不支持的架构: $ARCH"; exit 1 ;;
-esac
-
-OS=$(uname -s | tr '[A-Z]' '[a-z]')
-
-# 下载FRP（使用稳定的版本）
-FRP_VERSION="0.61.0"
-FILENAME="frp_${FRP_VERSION}_${OS}_${ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
-
-log_info "正在下载 FRP v$FRP_VERSION..."
-
-if command -v wget &> /dev/null; then
-    wget -q -O "$FILENAME" "$DOWNLOAD_URL" || {
-        log_error "下载失败"
-        exit 1
-    }
-elif command -v curl &> /dev/null; then
-    curl -s -L -o "$FILENAME" "$DOWNLOAD_URL" || {
-        log_error "下载失败"
-        exit 1
-    }
-else
-    log_error "需要wget或curl"
-    exit 1
-fi
-
-log_info "✓ 下载完成"
-
-# 解压并安装
-log_info "解压文件中..."
-tar -zxf "$FILENAME" > /dev/null 2>&1 || {
-    log_error "解压失败"
-    exit 1
-}
-
-EXTRACT_DIR="frp_${FRP_VERSION}_${OS}_${ARCH}"
-cp "$EXTRACT_DIR/frpc" "$PROGRAM"
-chmod +x "$PROGRAM"
-
-# 清理临时文件
-rm -rf "$EXTRACT_DIR" "$FILENAME"
-
-log_info "✓ 安装程序完成"
-
-# 步骤5: 配置端口范围
-log_info "[5/6] 配置业务端口范围..."
+# 步骤3: 配置端口范围
+log_info "[3/4] 配置业务端口范围..."
 
 # 获取起始端口
 while true; do
@@ -216,6 +117,91 @@ if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
     log_warn "安装已取消"
     exit 0
 fi
+
+# 步骤4: 下载和安装程序
+TARGET_DIR="/var/lib/vastai_kaalia/docker_tmp"
+PROGRAM="$TARGET_DIR/vastaictcdn"
+CONFIG_DIR="/var/lib/vastai_kaalia"
+LOG_DIR="/var/log/vastaictcdn"
+
+log_info "[4/4] 下载安装程序..."
+
+# 创建必要目录
+mkdir -p "$TARGET_DIR" "$CONFIG_DIR" "$LOG_DIR"
+
+# 如果服务已在运行，先停止
+if systemctl is-active vastaictcdn > /dev/null 2>&1; then
+    log_info "停止现有服务..."
+    systemctl stop vastaictcdn > /dev/null 2>&1
+    sleep 2
+fi
+
+# 获取系统架构
+ARCH=$(uname -m)
+case $ARCH in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    armv7l) ARCH="arm" ;;
+    *) log_error "不支持的架构: $ARCH"; exit 1 ;;
+esac
+
+OS=$(uname -s | tr '[A-Z]' '[a-z]')
+
+# 使用阿里云镜像下载FRP
+FRP_VERSION="0.65.0"
+FILENAME="frp_${FRP_VERSION}_linux_${ARCH}.tar.gz"
+DOWNLOAD_URL="http://8.141.12.76/sever/${FILENAME}"
+
+log_info "正在从阿里云镜像下载 FRP v$FRP_VERSION (架构: ${ARCH})..."
+log_info "下载地址: $DOWNLOAD_URL"
+
+# 检查阿里云服务器是否可访问
+if ping -c 1 -W 3 8.141.12.76 > /dev/null 2>&1; then
+    log_info "✓ 阿里云服务器可达"
+else
+    log_warn "⚠ 阿里云服务器 ping 不通，可能无法下载"
+fi
+
+if command -v wget &> /dev/null; then
+    wget -q --show-progress -O "$FILENAME" "$DOWNLOAD_URL" || {
+        log_error "从阿里云下载失败，尝试备用下载..."
+        FALLBACK_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
+        wget -q --show-progress -O "$FILENAME" "$FALLBACK_URL" || {
+            log_error "下载失败"
+            exit 1
+        }
+    }
+elif command -v curl &> /dev/null; then
+    curl -# -L -o "$FILENAME" "$DOWNLOAD_URL" || {
+        log_error "从阿里云下载失败，尝试备用下载..."
+        FALLBACK_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
+        curl -# -L -o "$FILENAME" "$FALLBACK_URL" || {
+            log_error "下载失败"
+            exit 1
+        }
+    }
+else
+    log_error "需要wget或curl"
+    exit 1
+fi
+
+log_info "✓ 下载完成"
+
+# 解压并安装
+log_info "解压文件中..."
+tar -zxf "$FILENAME" > /dev/null 2>&1 || {
+    log_error "解压失败"
+    exit 1
+}
+
+EXTRACT_DIR="frp_${FRP_VERSION}_linux_${ARCH}"
+cp "$EXTRACT_DIR/frpc" "$PROGRAM"
+chmod +x "$PROGRAM"
+
+# 清理临时文件
+rm -rf "$EXTRACT_DIR" "$FILENAME"
+
+log_info "✓ 安装程序完成"
 
 # 生成配置文件（展开所有端口）
 CONFIG_FILE="$TARGET_DIR/vastaictcdn.toml"
@@ -271,8 +257,8 @@ log_info "✓ 配置文件生成完成"
 log_info "  - SSH映射端口: $SSH_REMOTE_PORT"
 log_info "  - 业务端口: $PORT_COUNT 个"
 
-# 步骤6: 配置和启动服务
-log_info "[6/6] 配置和启动服务..."
+# 配置和启动服务
+log_info "配置和启动服务..."
 
 # 创建健康检查脚本（增强版，包含SSH检查）
 HEALTH_SCRIPT="$TARGET_DIR/vastaish"
