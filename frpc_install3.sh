@@ -161,7 +161,7 @@ EOF
 done
 echo "完成"
 
-# 创建SSH服务
+# 创建SSH服务（保持原有配置）
 echo -n "创建系统服务... "
 cat > /etc/systemd/system/frpc-ssh.service << EOF
 [Unit]
@@ -180,31 +180,160 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-# 创建业务服务
-cat > /etc/systemd/system/frpc-business.service << EOF
+# ========== 增强版业务服务配置（带多重自动重连）==========
+cat > /etc/systemd/system/frpc-business.service << 'EOF'
 [Unit]
-Description=FRP Business Client
-After=network.target
+Description=FRP Business Client (Enhanced Auto-Restart)
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=$PROGRAM -c /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml
+WorkingDirectory=/var/lib/vastai_kaalia/docker_tmp
+
+# 主程序
+ExecStart=/var/lib/vastai_kaalia/docker_tmp/vastaictcdn -c /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml
+
+# 自动重启配置（强化版）
 Restart=always
-RestartSec=10
+RestartSec=5
+StartLimitBurst=10
+StartLimitIntervalSec=120
+
+# 进程看护 - 如果30秒无响应就重启
+WatchdogSec=30
+
+# 优雅停止超时
+TimeoutStopSec=30
+
+# 文件描述符限制
 LimitNOFILE=1048576
+LimitNPROC=512
+
+# 核心转储限制
+LimitCORE=infinity
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=frpc-business
+
+# 安全设置
+PrivateTmp=true
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
+# 创建增强版健康检查脚本
+cat > /usr/local/bin/frpc-business-monitor.sh << 'EOF'
+#!/bin/bash
+
+SERVICE="frpc-business"
+LOG_FILE="/var/log/frpc-monitor.log"
+CHECK_INTERVAL=60
+MAX_FAILS=3
+FAIL_COUNT=0
+
+log_msg() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+while true; do
+    # 1. 检查服务是否active
+    if ! systemctl is-active --quiet $SERVICE; then
+        log_msg "服务未运行，尝试启动"
+        systemctl start $SERVICE
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        sleep 10
+        continue
+    fi
+    
+    # 2. 检查进程是否存在
+    PID=$(pgrep -f "frpc-business.toml")
+    if [ -z "$PID" ]; then
+        log_msg "进程不存在，重启服务"
+        systemctl restart $SERVICE
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        sleep 10
+        continue
+    fi
+    
+    # 3. 检查最近日志中是否有成功代理
+    if ! journalctl -u $SERVICE -n 50 --no-pager 2>/dev/null | grep -q "start proxy success"; then
+        log_msg "最近无成功代理记录，可能连接异常"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        
+        if [ $FAIL_COUNT -ge $MAX_FAILS ]; then
+            log_msg "连续 $MAX_FAILS 次异常，强制重启"
+            systemctl restart $SERVICE
+            FAIL_COUNT=0
+        fi
+    else
+        # 有成功记录，重置失败计数
+        FAIL_COUNT=0
+        log_msg "服务运行正常"
+    fi
+    
+    sleep $CHECK_INTERVAL
+done
+EOF
+
+chmod +x /usr/local/bin/frpc-business-monitor.sh
+
+# 创建监控服务
+cat > /etc/systemd/system/frpc-monitor.service << 'EOF'
+[Unit]
+Description=FRP Business Client Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/frpc-business-monitor.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 创建定时健康检查
+cat > /etc/systemd/system/frpc-healthcheck.service << 'EOF'
+[Unit]
+Description=FRP Business Health Check
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'if ! systemctl is-active frpc-business >/dev/null; then systemctl restart frpc-business; fi'
+EOF
+
+cat > /etc/systemd/system/frpc-healthcheck.timer << 'EOF'
+[Unit]
+Description=FRP Business Health Check Timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+RandomizedDelaySec=10
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# 重新加载 systemd
 systemctl daemon-reload
-systemctl enable frpc-ssh frpc-business >/dev/null 2>&1
+
+# 启用所有服务
+systemctl enable frpc-ssh frpc-business frpc-monitor frpc-healthcheck.timer >/dev/null 2>&1
 echo "完成"
 
 # 启动服务
 echo -n "启动服务中... "
-systemctl start frpc-ssh frpc-business
+systemctl start frpc-ssh frpc-business frpc-monitor frpc-healthcheck.timer
 sleep 3
 echo "完成"
 echo ""
