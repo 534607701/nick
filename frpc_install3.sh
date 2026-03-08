@@ -60,7 +60,6 @@ done
 
 PORT_COUNT=$((END_PORT - START_PORT + 1))
 echo -e "\n${YELLOW}配置确认:${NC}"
-echo "  本机IP: $LOCAL_IP"
 echo "  SSH端口: $SSH_REMOTE_PORT"
 echo "  业务端口: $START_PORT-$END_PORT (共$PORT_COUNT个)"
 echo ""
@@ -210,40 +209,10 @@ sleep 3
 echo "完成"
 echo ""
 
-# 显示结果（简化版，不显示IP）
+# 只显示简单的成功信息
 echo "════════════════════════════════════════════════════════════════════════"
-echo -e "                          ${GREEN}安装完成！${NC}"
+echo -e "                     ${GREEN}安装成功！${NC}"
 echo "════════════════════════════════════════════════════════════════════════"
-echo ""
-echo " 📋 配置信息:"
-echo "   - 本机IP: $LOCAL_IP"
-echo ""
-echo " 🔑 SSH远程端口: $SSH_REMOTE_PORT"
-echo " 🌐 业务端口范围: $START_PORT ~ $END_PORT (共$PORT_COUNT个)"
-echo ""
-echo " 📊 服务状态:"
-systemctl status frpc-ssh --no-pager -l | grep "Active:" | sed 's/^/   /'
-systemctl status frpc-business --no-pager -l | grep "Active:" | sed 's/^/   /'
-echo ""
-echo " 📝 常用命令:"
-echo "   - 查看SSH日志: journalctl -u frpc-ssh -f"
-echo "   - 查看业务日志: journalctl -u frpc-business -f"
-echo "   - 重启SSH服务: systemctl restart frpc-ssh"
-echo "   - 重启业务服务: systemctl restart frpc-business"
-echo ""
-
-# 测试连接（简化版）
-echo -n "测试SSH端口连通性... "
-if nc -z -w 3 $SERVER1_IP $SSH_REMOTE_PORT 2>/dev/null; then
-    echo -e "${GREEN}✓ 正常${NC}"
-else
-    echo -e "${YELLOW}⚠ 等待启动${NC}"
-fi
-
-echo ""
-echo "配置文件位置:"
-echo "  SSH: /var/lib/vastai_kaalia/docker_tmp/frpc-ssh.toml"
-echo "  业务: /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml"
 echo ""
 
 # 删除脚本自身
