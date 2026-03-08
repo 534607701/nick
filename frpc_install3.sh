@@ -220,7 +220,7 @@ cat >> $CONFIG_FILE << SSHBLOCK
 # ========== SSH远程访问配置 ==========
 # 通过 ${SERVER_IP}:${SSH_REMOTE_PORT} 访问本机SSH
 [[proxies]]
-name = "ssh-access"
+name = "ssh-access-${SSH_REMOTE_PORT}"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = 22
