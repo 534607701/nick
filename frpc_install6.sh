@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ==================================================
-# FRPC 多客户端安装脚本 - 完整集成版
-# 特性：安全查找清理 + 自动安装 + 修复损坏链接
+# FRPC 多客户端安装脚本 - 强制清理重装版
+# 特性：强制清理所有FRP残留 + 自动安装 + 自定义端口名称
 # ==================================================
 
 # 颜色定义
@@ -22,7 +22,7 @@ print_step() { echo -e "${CYAN}[STEP $1]${NC} $2"; }
 # 清屏
 clear
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║     FRPC 多客户端安装脚本 - 完整集成版                       ║"
+echo "║     FRPC 多客户端安装脚本 - 强制清理重装版                   ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -54,111 +54,88 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# ==================== 第2步：安全查找和清理 ====================
-print_step "2/8" "查找并清理现有 frp 服务"
+# ==================== 第2步：强制清理所有 FRP 残留（核心优化） ====================
+print_step "2/8" "强制清理所有 FRP 残留"
 
 # 记录当前脚本的PID
 SCRIPT_PID=$$
 print_info "当前脚本PID: $SCRIPT_PID"
 
-# 1. 查找正在运行的 frpc 进程
-echo "查找 frpc 进程..."
-FRPC_PIDS=$(ps aux | grep frpc | grep -v grep | grep -v "$SCRIPT_PID" | awk '{print $2}')
-if [ -n "$FRPC_PIDS" ]; then
-    echo "找到以下 frpc 进程:"
-    ps aux | grep frpc | grep -v grep | grep -v "$SCRIPT_PID"
-    
-    print_input "是否停止这些进程？(y/n): "
-    read STOP_FRPC
-    if [[ "$STOP_FRPC" =~ ^[Yy]$ ]]; then
-        echo "停止 frpc 进程..."
-        for pid in $FRPC_PIDS; do
-            echo "  停止进程 $pid"
-            sudo kill $pid 2>/dev/null
-        done
-        sleep 2
-        
-        # 检查是否还有残留
-        REMAINING=$(ps aux | grep frpc | grep -v grep | grep -v "$SCRIPT_PID" | wc -l)
-        if [ $REMAINING -gt 0 ]; then
-            echo "还有 $REMAINING 个进程未停止，尝试强制停止..."
-            for pid in $FRPC_PIDS; do
-                sudo kill -9 $pid 2>/dev/null
-            done
-            sleep 2
-        fi
+# 1. 强制停止所有 frpc/frps 进程（不管名称，直接杀）
+echo "强制停止所有 FRP 相关进程..."
+FRP_PIDS=$(ps aux | grep -E 'frpc|frps' | grep -v grep | grep -v "$SCRIPT_PID" | awk '{print $2}')
+if [ -n "$FRP_PIDS" ]; then
+    echo "找到 FRP 进程: $FRP_PIDS"
+    for pid in $FRP_PIDS; do
+        echo "  强制终止进程 $pid"
+        sudo kill -9 $pid 2>/dev/null
+    done
+    sleep 2
+    # 再次检查残留
+    REMAINING=$(ps aux | grep -E 'frpc|frps' | grep -v grep | grep -v "$SCRIPT_PID" | wc -l)
+    if [ $REMAINING -gt 0 ]; then
+        print_warn "仍有 $REMAINING 个 FRP 进程未清理干净，可能是权限问题"
+    else
+        print_info "所有 FRP 进程已清理"
     fi
 else
-    echo "未找到运行中的 frpc 进程"
+    echo "未找到运行中的 FRP 进程"
 fi
 
-# 2. 查找 systemd 服务
+# 2. 强制停止并禁用所有 frp 相关 systemd 服务（通配符匹配）
 echo ""
-echo "查找 frpc systemd 服务..."
-if systemctl list-unit-files | grep -q frpc@vastaictssh; then
-    echo "找到 SSH 服务: frpc@vastaictssh.service"
-    print_input "是否停止并禁用？(y/n): "
-    read STOP_SSH
-    if [[ "$STOP_SSH" =~ ^[Yy]$ ]]; then
-        sudo systemctl stop frpc@vastaictssh.service 2>/dev/null
-        sudo systemctl disable frpc@vastaictssh.service 2>/dev/null
-        echo "  SSH 服务已停止"
-    fi
+echo "强制停止并禁用所有 FRP 相关服务..."
+FRP_SERVICES=$(systemctl list-unit-files | grep -E 'frpc|frps' | awk '{print $1}')
+if [ -n "$FRP_SERVICES" ]; then
+    for service in $FRP_SERVICES; do
+        echo "  处理服务: $service"
+        sudo systemctl stop $service 2>/dev/null
+        sudo systemctl disable $service 2>/dev/null
+        sudo rm -f /etc/systemd/system/$service 2>/dev/null
+    done
+    sudo systemctl daemon-reload
+    print_info "所有 FRP 服务已清理"
+else
+    echo "未找到 FRP 相关服务"
 fi
 
-if systemctl list-unit-files | grep -q frpc@vastaictcdn; then
-    echo "找到 CDN 服务: frpc@vastaictcdn.service"
-    print_input "是否停止并禁用？(y/n): "
-    read STOP_CDN
-    if [[ "$STOP_CDN" =~ ^[Yy]$ ]]; then
-        sudo systemctl stop frpc@vastaictcdn.service 2>/dev/null
-        sudo systemctl disable frpc@vastaictcdn.service 2>/dev/null
-        echo "  CDN 服务已停止"
-    fi
-fi
-
-# 3. 查找配置文件
+# 3. 强制删除所有 FRP 配置文件、日志、二进制文件
 echo ""
-echo "查找 frp 配置文件..."
-if [ -f /etc/frp/vastaictssh.toml ] || [ -f /etc/frp/vastaictcdn.toml ]; then
-    echo "找到以下配置文件:"
-    ls -la /etc/frp/vastaict*.toml 2>/dev/null || echo "  无"
-    
-    print_input "是否删除这些配置文件？(y/n): "
-    read DEL_CONFIG
-    if [[ "$DEL_CONFIG" =~ ^[Yy]$ ]]; then
-        sudo rm -f /etc/frp/vastaict*.toml 2>/dev/null
-        echo "  配置文件已删除"
-    fi
+echo "强制删除 FRP 配置/日志/二进制文件..."
+
+# 删除配置目录
+if [ -d "/etc/frp" ]; then
+    sudo rm -rf /etc/frp
+    print_info "已删除配置目录: /etc/frp"
 fi
 
-# 4. 查找日志文件
-echo ""
-echo "查找 frp 日志文件..."
-if [ -f /var/log/frp/frpc-ssh.log ] || [ -f /var/log/frp/frpc-cdn.log ]; then
-    echo "找到以下日志文件:"
-    ls -la /var/log/frp/frpc-*.log 2>/dev/null || echo "  无"
-    
-    print_input "是否删除这些日志？(y/n): "
-    read DEL_LOGS
-    if [[ "$DEL_LOGS" =~ ^[Yy]$ ]]; then
-        sudo rm -f /var/log/frp/frpc-*.log 2>/dev/null
-        echo "  日志文件已删除"
-    fi
+# 删除日志目录
+if [ -d "/var/log/frp" ]; then
+    sudo rm -rf /var/log/frp
+    print_info "已删除日志目录: /var/log/frp"
 fi
 
-print_info "清理阶段完成"
+# 删除二进制文件（全路径查找）
+FRP_BINS=$(which frpc frps 2>/dev/null)
+if [ -n "$FRP_BINS" ]; then
+    for bin in $FRP_BINS; do
+        sudo rm -f $bin
+        echo "  已删除二进制文件: $bin"
+    done
+fi
+# 额外清理常见路径
+sudo rm -f /usr/local/bin/frpc /usr/local/bin/frps /usr/bin/frpc /usr/bin/frps 2>/dev/null
+print_info "FRP 二进制文件已强制清理"
+
+# 4. 清理临时文件
+sudo rm -rf /tmp/frp* 2>/dev/null
+print_info "临时文件已清理"
+
+print_info "强制清理阶段完成 - 所有旧 FRP 残留已删除"
 sleep 2
 
-# ==================== 第3步：检查并安装 frpc（超级修复版） ====================
-print_step "3/8" "检查 frpc 环境"
-
-# 首先，无论是否存在，先清理可能的损坏链接
-if [ -e "/usr/local/bin/frpc" ] || [ -L "/usr/local/bin/frpc" ]; then
-    print_warn "检测到 /usr/local/bin/frpc 已存在，正在清理..."
-    sudo rm -f /usr/local/bin/frpc
-    print_info "已清理旧文件"
-fi
+# ==================== 第3步：重新安装 frpc（超级修复版） ====================
+print_step "3/8" "重新安装 frpc 客户端"
 
 # 确保目录存在
 sudo mkdir -p /usr/local/bin
@@ -231,8 +208,8 @@ sudo mkdir -p /etc/frp
 sudo mkdir -p /var/log/frp
 print_info "目录创建完成"
 
-# ==================== 第5步：生成配置文件 ====================
-print_step "5/8" "生成配置文件"
+# ==================== 第5步：生成配置文件（核心优化：自定义端口名称） ====================
+print_step "5/8" "生成配置文件（自定义端口名称）"
 
 # SSH 配置
 print_info "创建 SSH 配置文件..."
@@ -245,7 +222,7 @@ log.to = "/var/log/frp/frpc-ssh.log"
 log.level = "info"
 
 [[proxies]]
-name = "ssh_proxy"
+name = "ssh_proxy_${SSH_PORT}"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = 22
@@ -271,14 +248,14 @@ log.level = "info"
 transport.tcpMux = true
 EOF
 
-# 添加批量端口
-print_info "添加 $PORT_COUNT 个端口映射..."
+# 添加批量端口（核心优化：端口名称改为 frp_port_xxx 替换 tcp_xxx）
+print_info "添加 $PORT_COUNT 个端口映射（名称：frp_port_端口号）..."
 count=0
 for port in $(seq $START_PORT $END_PORT); do
     sudo tee -a /etc/frp/vastaictcdn.toml > /dev/null << EOF
 
 [[proxies]]
-name = "tcp_${port}"
+name = "frp_port_${port}"
 type = "tcp"
 localIP = "127.0.0.1"
 localPort = ${port}
@@ -381,6 +358,8 @@ echo ""
 echo "查看日志:"
 echo "  tail -f /var/log/frp/frpc-ssh.log"
 echo "  tail -f /var/log/frp/frpc-cdn.log"
+echo ""
+echo "端口名称规则: frp_port_端口号（如 frp_port_46200）"
 echo ""
 
 # 可选：删除安装脚本
