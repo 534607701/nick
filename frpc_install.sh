@@ -1,13 +1,9 @@
 #!/bin/bash
 
 # ==================================================
-# FRPC 安装脚本 - 超级防御版
-# 特性：每一步都有保护，防止中断
+# FRPC 多客户端安装脚本 - 安全版
+# 特性：安全清理，避免误杀自身
 # ==================================================
-
-# 设置错误处理
-set -e
-trap 'echo "错误发生在第 $LINENO 行"' ERR
 
 # 颜色定义
 RED='\033[0;31m'
@@ -22,7 +18,7 @@ print_input() { echo -e "${BLUE}[INPUT]${NC} $1"; }
 # 清屏
 clear
 echo "================================================"
-echo "   FRPC 多客户端安装脚本 - 超级防御版"
+echo "   FRPC 多客户端安装脚本 - 安全版"
 echo "================================================"
 echo ""
 
@@ -51,24 +47,39 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# ==================== 第1步：清理旧服务 ====================
+# ==================== 安全清理旧服务 ====================
 echo ""
-print_info "【第1步】清理旧服务..."
+print_info "【第1步】安全清理旧服务..."
 
-# 逐个停止服务，避免一次性操作太多
-sudo systemctl stop frpc@vastaictssh.service 2>/dev/null || true
-sudo systemctl stop frpc@vastaictcdn.service 2>/dev/null || true
-sleep 1
+# 1. 先停止 systemd 服务（如果存在）
+if systemctl list-unit-files | grep -q frpc@vastaictssh; then
+    echo "停止 SSH 服务..."
+    sudo systemctl stop frpc@vastaictssh.service 2>/dev/null
+fi
 
-# 逐个杀死进程
-sudo pkill -f "frpc.*vastaictssh" 2>/dev/null || true
-sudo pkill -f "frpc.*vastaictcdn" 2>/dev/null || true
-sudo pkill -f frpc 2>/dev/null || true
+if systemctl list-unit-files | grep -q frpc@vastaictcdn; then
+    echo "停止 CDN 服务..."
+    sudo systemctl stop frpc@vastaictcdn.service 2>/dev/null
+fi
+
+# 2. 安全地杀死 frpc 进程（排除脚本自身）
+echo "清理 frpc 进程..."
+# 只杀包含 frpc 但不包含当前脚本的进程
+ps aux | grep frpc | grep -v grep | grep -v "$0" | awk '{print $2}' | xargs -r sudo kill -9 2>/dev/null
+
+# 3. 等待进程结束
 sleep 2
+
+# 4. 检查是否还有残留
+if pgrep -f "frpc" | grep -v -f <(echo $$) > /dev/null; then
+    echo "仍有 frpc 进程残留，尝试再次清理..."
+    pkill -9 -f "frpc.*toml" 2>/dev/null
+    sleep 2
+fi
 
 print_info "清理完成"
 
-# ==================== 第2步：检查并安装 frpc ====================
+# ==================== 检查并安装 frpc ====================
 echo ""
 print_info "【第2步】检查 frpc..."
 
@@ -85,7 +96,10 @@ if [ ! -f /usr/local/bin/frpc ]; then
     esac
     
     cd /tmp
+    echo "下载 $FRP_FILE ..."
     wget -q "https://github.com/fatedier/frp/releases/download/v0.61.0/${FRP_FILE}"
+    
+    echo "解压中..."
     tar -xzf ${FRP_FILE}
     
     DIR_NAME=$(echo $FRP_FILE | sed 's/.tar.gz//')
@@ -98,15 +112,10 @@ if [ ! -f /usr/local/bin/frpc ]; then
     print_info "frpc 安装完成"
 else
     print_info "frpc 已存在"
+    /usr/local/bin/frpc --version
 fi
 
-# 验证 frpc
-/usr/local/bin/frpc --version || {
-    print_error "frpc 无法运行"
-    exit 1
-}
-
-# ==================== 第3步：创建配置目录 ====================
+# ==================== 创建配置目录 ====================
 echo ""
 print_info "【第3步】创建配置目录..."
 
@@ -116,11 +125,11 @@ sudo chmod 755 /etc/frp /var/log/frp
 
 print_info "目录创建完成"
 
-# ==================== 第4步：创建 SSH 配置 ====================
+# ==================== 创建 SSH 配置 ====================
 echo ""
 print_info "【第4步】创建 SSH 配置文件..."
 
-sudo tee /etc/frp/vastaictssh.toml > /dev/null << EOF
+cat > /tmp/vastaictssh.toml << EOF
 serverAddr = "8.141.12.76"
 serverPort = 7000
 auth.method = "token"
@@ -136,20 +145,27 @@ localPort = 22
 remotePort = ${SSH_PORT}
 EOF
 
-# 验证 SSH 配置
-/usr/local/bin/frpc -c /etc/frp/vastaictssh.toml -v || {
+# 先验证
+/usr/local/bin/frpc -c /tmp/vastaictssh.toml -v || {
     print_error "SSH 配置验证失败"
     exit 1
 }
 
+# 验证通过后复制到正式位置
+sudo cp /tmp/vastaictssh.toml /etc/frp/vastaictssh.toml
+rm /tmp/vastaictssh.toml
+
 print_info "SSH 配置创建完成"
 
-# ==================== 第5步：创建 CDN 配置 ====================
+# ==================== 创建 CDN 配置 ====================
 echo ""
 print_info "【第5步】创建 CDN 配置文件..."
 
-# 先创建基础配置
-sudo tee /etc/frp/vastaictcdn.toml > /dev/null << EOF
+# 创建临时文件
+> /tmp/vastaictcdn.toml
+
+# 写入基础配置
+cat >> /tmp/vastaictcdn.toml << EOF
 serverAddr = "209.146.116.106"
 serverPort = 7000
 auth.method = "token"
@@ -159,19 +175,11 @@ log.level = "info"
 transport.tcpMux = true
 EOF
 
-# 分批添加端口，避免一次性写入太多
-print_info "添加端口映射 (每次50个)..."
-batch_size=50
-current=$START_PORT
-
-while [ $current -le $END_PORT ]; do
-    batch_end=$((current + batch_size - 1))
-    [ $batch_end -gt $END_PORT ] && batch_end=$END_PORT
-    
-    print_info "添加端口 $current - $batch_end..."
-    
-    for port in $(seq $current $batch_end); do
-        sudo tee -a /etc/frp/vastaictcdn.toml > /dev/null << EOF
+# 添加端口映射（每50个一组显示进度）
+echo "添加 $PORT_COUNT 个端口映射..."
+count=0
+for port in $(seq $START_PORT $END_PORT); do
+    cat >> /tmp/vastaictcdn.toml << EOF
 
 [[proxies]]
 name = "tcp_${port}"
@@ -180,21 +188,27 @@ localIP = "127.0.0.1"
 localPort = ${port}
 remotePort = ${port}
 EOF
-    done
-    
-    current=$((batch_end + 1))
-    sleep 1
+    count=$((count + 1))
+    if [ $((count % 50)) -eq 0 ]; then
+        echo "  已添加 $count 个端口..."
+    fi
 done
 
-# 验证 CDN 配置
-/usr/local/bin/frpc -c /etc/frp/vastaictcdn.toml -v || {
+echo "  共添加 $count 个端口"
+
+# 验证配置
+/usr/local/bin/frpc -c /tmp/vastaictcdn.toml -v || {
     print_error "CDN 配置验证失败"
     exit 1
 }
 
+# 验证通过后复制到正式位置
+sudo cp /tmp/vastaictcdn.toml /etc/frp/vastaictcdn.toml
+rm /tmp/vastaictcdn.toml
+
 print_info "CDN 配置创建完成"
 
-# ==================== 第6步：创建 systemd 服务 ====================
+# ==================== 创建 systemd 服务 ====================
 echo ""
 print_info "【第6步】创建 systemd 服务..."
 
@@ -215,45 +229,71 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-
 print_info "服务文件创建完成"
 
-# ==================== 第7步：启动服务 ====================
+# ==================== 启动服务 ====================
 echo ""
 print_info "【第7步】启动服务..."
 
 # 先启动 SSH
+echo "启动 SSH 客户端..."
 sudo systemctl enable frpc@vastaictssh.service
 sudo systemctl start frpc@vastaictssh.service
-sleep 2
-
-# 再启动 CDN
-sudo systemctl enable frpc@vastaictcdn.service
-sudo systemctl start frpc@vastaictcdn.service
 sleep 3
 
-# ==================== 第8步：检查状态 ====================
+# 检查 SSH 状态
+if systemctl is-active --quiet frpc@vastaictssh.service; then
+    echo "  SSH 客户端启动成功"
+else
+    echo "  SSH 客户端启动失败，查看日志："
+    sudo journalctl -u frpc@vastaictssh.service -n 5 --no-pager
+fi
+
+# 再启动 CDN
+echo "启动 CDN 客户端..."
+sudo systemctl enable frpc@vastaictcdn.service
+sudo systemctl start frpc@vastaictcdn.service
+sleep 5
+
+# 检查 CDN 状态
+if systemctl is-active --quiet frpc@vastaictcdn.service; then
+    echo "  CDN 客户端启动成功"
+else
+    echo "  CDN 客户端启动失败，查看日志："
+    sudo journalctl -u frpc@vastaictcdn.service -n 5 --no-pager
+fi
+
+# ==================== 最终状态检查 ====================
 echo ""
-print_info "【第8步】检查服务状态..."
+print_info "【第8步】最终状态检查..."
 
 echo "----------------------------------------"
 echo "SSH 客户端状态:"
-sudo systemctl status frpc@vastaictssh.service --no-pager | grep Active || echo "  未运行"
+systemctl status frpc@vastaictssh.service --no-pager | grep -E "Active|Main" || echo "  未运行"
 
 echo ""
 echo "CDN 客户端状态:"
-sudo systemctl status frpc@vastaictcdn.service --no-pager | grep Active || echo "  未运行"
+systemctl status frpc@vastaictcdn.service --no-pager | grep -E "Active|Main" || echo "  未运行"
 echo "----------------------------------------"
 
-# ==================== 第9步：查看日志 ====================
+# ==================== 查看日志 ====================
 echo ""
-print_info "【第9步】查看最新日志..."
+print_info "最新日志："
 
 echo "SSH 日志:"
-sudo tail -5 /var/log/frp/frpc-ssh.log 2>/dev/null || echo "  暂无日志"
+if [ -f /var/log/frp/frpc-ssh.log ]; then
+    tail -3 /var/log/frp/frpc-ssh.log 2>/dev/null | sed 's/^/  /'
+else
+    echo "  暂无日志"
+fi
+
 echo ""
 echo "CDN 日志:"
-sudo tail -5 /var/log/frp/frpc-cdn.log 2>/dev/null || echo "  暂无日志"
+if [ -f /var/log/frp/frpc-cdn.log ]; then
+    tail -3 /var/log/frp/frpc-cdn.log 2>/dev/null | sed 's/^/  /'
+else
+    echo "  暂无日志"
+fi
 
 # ==================== 完成 ====================
 echo ""
@@ -265,7 +305,7 @@ echo "配置文件:"
 echo "  /etc/frp/vastaictssh.toml"
 echo "  /etc/frp/vastaictcdn.toml"
 echo ""
-echo "查看日志:"
+echo "查看日志命令:"
 echo "  tail -f /var/log/frp/frpc-ssh.log"
 echo "  tail -f /var/log/frp/frpc-cdn.log"
 echo ""
