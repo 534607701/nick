@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Axis AI Deploy Script - 双服务器极简版（完整修复版）
+# Axis AI Deploy Script - 双服务器极简版
 # 自动适配本机IP，无需手动修改
 
 # 颜色定义
@@ -11,17 +11,17 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo "════════════════════════════════════════════════════════════════════════"
-echo "                    ****隔壁老王**** 安装脚本（完整修复版）"
+echo "                    ****隔壁老王**** 安装脚本"
 echo "════════════════════════════════════════════════════════════════════════"
 echo ""
 
-# 预设服务器配置
+# 预设服务器配置（隐藏不显示）
 SERVER1_IP="8.141.12.76"
 SERVER2_IP="209.146.116.106"
 SERVER_PORT=7000
 AUTH_TOKEN="qazwsx123.0"
 
-# 获取本机IP
+# 获取本机IP（自动适配）
 echo -n "正在检测本机IP... "
 LOCAL_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
 
@@ -79,120 +79,50 @@ PROGRAM="$TARGET_DIR/vastaictcdn"
 # 创建目录
 mkdir -p "$TARGET_DIR" 2>/dev/null
 
-# ========== 彻底清理阶段 ==========
-echo -e "${YELLOW}[1/5] 彻底清理所有旧配置...${NC}"
-
-# 1. 停止所有相关服务
-echo "  停止服务..."
-systemctl stop vastaictcdn frpc-business frpc-monitor frpc-ssh 2>/dev/null
-
-# 2. 禁用所有相关服务
-echo "  禁用服务..."
-systemctl disable vastaictcdn frpc-business frpc-monitor frpc-ssh 2>/dev/null
-
-# 3. 删除所有相关的 service 文件
-echo "  删除服务文件..."
-rm -f /etc/systemd/system/vastaictcdn.service
-rm -f /etc/systemd/system/frpc-business.service
-rm -f /etc/systemd/system/frpc-monitor.service
-rm -f /etc/systemd/system/frpc-healthcheck.service
-rm -f /etc/systemd/system/frpc-healthcheck.timer
-rm -f /etc/systemd/system/frpc-ssh.service 2>/dev/null
-
-# 4. 杀掉所有相关进程
-echo "  终止进程..."
-pkill -f "vastaictcdn"
-pkill -f "frpc-business"
-pkill -f "frpc-monitor"
-pkill -f "frpc-ssh"
-
-# 5. 备份并删除配置文件
-echo "  备份配置文件..."
-BACKUP_TIME=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="/root/frp_backup_$BACKUP_TIME"
-mkdir -p "$BACKUP_DIR"
-
-if [ -f "$TARGET_DIR/frpc-business.toml" ]; then
-    cp "$TARGET_DIR/frpc-business.toml" "$BACKUP_DIR/frpc-business.toml.bak"
-    echo "    已备份 frpc-business.toml"
-fi
-if [ -f "$TARGET_DIR/frpc-ssh.toml" ]; then
-    cp "$TARGET_DIR/frpc-ssh.toml" "$BACKUP_DIR/frpc-ssh.toml.bak"
-    echo "    已备份 frpc-ssh.toml"
-fi
-if [ -f "$TARGET_DIR/vastaictcdn.toml" ]; then
-    cp "$TARGET_DIR/vastaictcdn.toml" "$BACKUP_DIR/vastaictcdn.toml.bak"
-    echo "    已备份 vastaictcdn.toml"
-fi
-
-# 6. 删除所有配置文件
-echo "  删除旧配置文件..."
-rm -f "$TARGET_DIR"/*.toml
-rm -f "$TARGET_DIR"/*.toml.bak*
-rm -f "$TARGET_DIR"/*.disabled
-
-# 7. 重新加载 systemd
-systemctl daemon-reload
-
-# 8. 等待2秒
+# 停止并禁用原有服务
+systemctl stop vastaictcdn frpc-ssh frpc-business 2>/dev/null
+systemctl disable vastaictcdn frpc-ssh frpc-business 2>/dev/null
 sleep 2
 
-# 9. 确认清理结果
-echo -e "${GREEN}  清理完成，备份文件在: $BACKUP_DIR${NC}"
-echo ""
-
-# ========== 下载阶段 ==========
-echo -e "${YELLOW}[2/5] 下载FRP客户端...${NC}"
-
-# 获取系统架构
-ARCH=$(uname -m)
-case $ARCH in
-    x86_64) ARCH="amd64" ;;
-    aarch64|arm64) ARCH="arm64" ;;
-    armv7l) ARCH="arm" ;;
-    *) echo -e "${RED}不支持的架构: $ARCH${NC}"; exit 1 ;;
-esac
-
-FRP_VERSION="0.65.0"
-FILENAME="frp_${FRP_VERSION}_linux_${ARCH}.tar.gz"
-DOWNLOAD_URL="http://8.141.12.76/sever/${FILENAME}"
-
-echo -n "  下载中... "
-cd /tmp
-
-# 尝试主下载源
-if command -v wget >/dev/null 2>&1; then
-    wget -q --show-progress -O "$FILENAME" "$DOWNLOAD_URL"
-    if [ $? -ne 0 ]; then
-        echo -e "\n  ${YELLOW}主源下载失败，尝试GitHub源...${NC}"
-        wget -q --show-progress -O "$FILENAME" "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
+# 检查FRP程序是否存在，如果不存在则下载
+if [ ! -f "$PROGRAM" ]; then
+    echo -n "下载FRP客户端... "
+    
+    # 获取系统架构
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64) ARCH="amd64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        armv7l) ARCH="arm" ;;
+        *) echo -e "${RED}不支持的架构: $ARCH${NC}"; exit 1 ;;
+    esac
+    
+    FRP_VERSION="0.65.0"
+    FILENAME="frp_${FRP_VERSION}_linux_${ARCH}.tar.gz"
+    DOWNLOAD_URL="http://8.141.12.76/sever/${FILENAME}"
+    
+    cd /tmp
+    if command -v wget >/dev/null 2>&1; then
+        wget -q --show-progress -O "$FILENAME" "$DOWNLOAD_URL"
+        if [ $? -ne 0 ]; then
+            echo -e "\n${YELLOW}下载失败，尝试备用源...${NC}"
+            wget -q --show-progress -O "$FILENAME" "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
+        fi
+    else
+        curl -# -L -o "$FILENAME" "$DOWNLOAD_URL"
     fi
-else
-    curl -# -L -o "$FILENAME" "$DOWNLOAD_URL"
-    if [ $? -ne 0 ]; then
-        echo -e "\n  ${YELLOW}主源下载失败，尝试GitHub源...${NC}"
-        curl -# -L -o "$FILENAME" "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${FILENAME}"
-    fi
+    
+    tar -zxf "$FILENAME" >/dev/null 2>&1
+    cp "frp_${FRP_VERSION}_linux_${ARCH}/frpc" "$PROGRAM"
+    chmod +x "$PROGRAM"
+    rm -rf "frp_${FRP_VERSION}_linux_${ARCH}" "$FILENAME"
+    cd - >/dev/null
+    echo "完成"
 fi
 
-# 检查下载是否成功
-if [ ! -f "$FILENAME" ]; then
-    echo -e "${RED}下载失败，请检查网络${NC}"
-    exit 1
-fi
-
-echo "  解压安装..."
-tar -zxf "$FILENAME" >/dev/null 2>&1
-cp "frp_${FRP_VERSION}_linux_${ARCH}/frpc" "$PROGRAM"
-chmod +x "$PROGRAM"
-rm -rf "frp_${FRP_VERSION}_linux_${ARCH}" "$FILENAME"
-cd - >/dev/null
-echo -e "${GREEN}  客户端安装完成${NC}"
-
-# ========== 创建SSH配置文件 ==========
-echo -e "${YELLOW}[3/5] 生成SSH配置文件...${NC}"
-cat > "$TARGET_DIR/frpc-ssh.toml" << EOF
-# ========== SSH配置 ==========
+# 创建SSH配置文件（名称带端口号）
+echo -n "生成SSH配置文件... "
+cat > /var/lib/vastai_kaalia/docker_tmp/frpc-ssh.toml << EOF
 serverAddr = "$SERVER1_IP"
 serverPort = $SERVER_PORT
 auth.method = "token"
@@ -205,47 +135,34 @@ localIP = "$LOCAL_IP"
 localPort = 22
 remotePort = $SSH_REMOTE_PORT
 EOF
-echo "  SSH配置已生成"
+echo "完成"
 
-# ========== 创建业务配置文件 ==========
-echo -e "${YELLOW}[4/5] 生成业务配置文件（共$PORT_COUNT个端口）...${NC}"
-
-# 生成带优化参数的业务配置
-TIMESTAMP=$(date +%s)
-cat > "$TARGET_DIR/frpc-business.toml" << EOF
-# ========== 业务配置 ==========
+# 创建业务配置文件
+echo -n "生成业务配置文件（共$PORT_COUNT个端口）... "
+cat > /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml << EOF
 serverAddr = "$SERVER2_IP"
 serverPort = $SERVER_PORT
 auth.method = "token"
 auth.token = "$AUTH_TOKEN"
 
-# ========== 性能优化 ==========
-transport.poolCount = 50
-transport.tcpMux = true
-heartbeat = 30
-heartbeatTimeout = 90
-
-# ========== 代理列表 ==========
 EOF
 
 # 批量添加端口
 for port in $(seq $START_PORT $END_PORT); do
-    cat >> "$TARGET_DIR/frpc-business.toml" << EOF
+    cat >> /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml << EOF
 [[proxies]]
-name = "port-${TIMESTAMP}-${port}"
+name = "port-$port"
 type = "tcp"
 localIP = "$LOCAL_IP"
 localPort = $port
 remotePort = $port
+
 EOF
 done
+echo "完成"
 
-echo "  业务配置已生成（使用时间戳${TIMESTAMP}）"
-
-# ========== 创建系统服务 ==========
-echo -e "${YELLOW}[5/5] 创建系统服务...${NC}"
-
-# SSH服务
+# 创建SSH服务（保持原有配置）
+echo -n "创建系统服务... "
 cat > /etc/systemd/system/frpc-ssh.service << EOF
 [Unit]
 Description=FRP SSH Client
@@ -254,7 +171,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=$PROGRAM -c $TARGET_DIR/frpc-ssh.toml
+ExecStart=$PROGRAM -c /var/lib/vastai_kaalia/docker_tmp/frpc-ssh.toml
 Restart=always
 RestartSec=10
 LimitNOFILE=1048576
@@ -263,10 +180,10 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-# 业务服务
+# ========== 增强版业务服务配置（带多重自动重连）==========
 cat > /etc/systemd/system/frpc-business.service << 'EOF'
 [Unit]
-Description=FRP Business Client
+Description=FRP Business Client (Enhanced Auto-Restart)
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -274,19 +191,35 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/var/lib/vastai_kaalia/docker_tmp
+
+# 主程序
 ExecStart=/var/lib/vastai_kaalia/docker_tmp/vastaictcdn -c /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml
+
+# 自动重启配置（强化版）
 Restart=always
 RestartSec=5
 StartLimitBurst=10
 StartLimitIntervalSec=120
+
+# 进程看护 - 如果30秒无响应就重启
 WatchdogSec=30
+
+# 优雅停止超时
 TimeoutStopSec=30
+
+# 文件描述符限制
 LimitNOFILE=1048576
 LimitNPROC=512
+
+# 核心转储限制
 LimitCORE=infinity
+
+# 日志
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=frpc-business
+
+# 安全设置
 PrivateTmp=true
 NoNewPrivileges=true
 
@@ -294,7 +227,7 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
-# 监控脚本
+# 创建增强版健康检查脚本
 cat > /usr/local/bin/frpc-business-monitor.sh << 'EOF'
 #!/bin/bash
 
@@ -309,6 +242,7 @@ log_msg() {
 }
 
 while true; do
+    # 1. 检查服务是否active
     if ! systemctl is-active --quiet $SERVICE; then
         log_msg "服务未运行，尝试启动"
         systemctl start $SERVICE
@@ -317,6 +251,7 @@ while true; do
         continue
     fi
     
+    # 2. 检查进程是否存在
     PID=$(pgrep -f "frpc-business.toml")
     if [ -z "$PID" ]; then
         log_msg "进程不存在，重启服务"
@@ -326,6 +261,7 @@ while true; do
         continue
     fi
     
+    # 3. 检查最近日志中是否有成功代理
     if ! journalctl -u $SERVICE -n 50 --no-pager 2>/dev/null | grep -q "start proxy success"; then
         log_msg "最近无成功代理记录，可能连接异常"
         FAIL_COUNT=$((FAIL_COUNT + 1))
@@ -336,6 +272,7 @@ while true; do
             FAIL_COUNT=0
         fi
     else
+        # 有成功记录，重置失败计数
         FAIL_COUNT=0
         log_msg "服务运行正常"
     fi
@@ -346,7 +283,7 @@ EOF
 
 chmod +x /usr/local/bin/frpc-business-monitor.sh
 
-# 监控服务
+# 创建监控服务
 cat > /etc/systemd/system/frpc-monitor.service << 'EOF'
 [Unit]
 Description=FRP Business Client Monitor
@@ -363,7 +300,7 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# 健康检查
+# 创建定时健康检查
 cat > /etc/systemd/system/frpc-healthcheck.service << 'EOF'
 [Unit]
 Description=FRP Business Health Check
@@ -390,32 +327,22 @@ EOF
 # 重新加载 systemd
 systemctl daemon-reload
 
-# 启用服务
-echo -n "  启用服务... "
+# 启用所有服务
 systemctl enable frpc-ssh frpc-business frpc-monitor frpc-healthcheck.timer >/dev/null 2>&1
 echo "完成"
 
 # 启动服务
-echo -n "  启动服务中... "
+echo -n "启动服务中... "
 systemctl start frpc-ssh frpc-business frpc-monitor frpc-healthcheck.timer
 sleep 3
 echo "完成"
-
-# 显示最终状态
 echo ""
+
+# 只显示简单的成功信息
 echo "════════════════════════════════════════════════════════════════════════"
 echo -e "                     ${GREEN}安装成功！${NC}"
 echo "════════════════════════════════════════════════════════════════════════"
 echo ""
-echo -e "${YELLOW}服务状态：${NC}"
-systemctl status frpc-ssh --no-pager | head -3
-systemctl status frpc-business --no-pager | head -3
-echo ""
-echo -e "${YELLOW}监控日志：${NC}"
-echo "  tail -f /var/log/frpc-monitor.log"
-echo ""
-echo -e "${YELLOW}备份文件：${NC}"
-echo "  $BACKUP_DIR"
 
 # 删除脚本自身
 rm -f "$0" 2>/dev/null
