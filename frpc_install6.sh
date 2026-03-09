@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # ==================================================
-# FRPC 多客户端安装脚本 - 最终稳定版（适配frp 0.61.0）
+# FRPC 多客户端安装脚本 - 最终修复版（适配frp 0.61.0）
 # 特性：强制清理 + 依赖自动安装 + 正确配置格式 + 稳连参数 + 容错处理
+# 修复：移除不支持的heartbeat字段，修正systemd注释问题
 # ==================================================
 
 # 颜色定义
@@ -22,7 +23,7 @@ print_step() { echo -e "${CYAN}[STEP $1]${NC} $2"; }
 # 清屏
 clear
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║     FRPC 多客户端安装脚本 - 最终稳定版（适配frp 0.61.0）      ║"
+echo "║     FRPC 多客户端安装脚本 - 最终修复版（适配frp 0.61.0）      ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -195,18 +196,23 @@ print_info "目录创建完成"
 # ==================== 第5步：生成配置文件（正确格式+稳连参数） ====================
 print_step "5/8" "生成配置文件（适配frp 0.61.0 + 稳连参数）"
 
-# SSH 配置（正确格式 + 稳连参数）
+# SSH 配置（正确格式 - 移除不支持的heartbeat字段）
 print_info "创建 SSH 配置文件..."
 sudo tee /etc/frp/vastaictssh.toml > /dev/null << EOF
-# frp 0.61.0 正确配置格式 + 稳连参数
+# frp 0.61.0 正确配置格式
 serverAddr = "8.141.12.76"
 serverPort = 7000
-auth = { method = "token", token = "qazwsx123.0" }
-log = { to = "/var/log/frp/frpc-ssh.log", level = "info", disableColor = true }
-heartbeat = { interval = 10, timeout = 30 }
-transport = { tcpKeepAlive = true, tcpKeepAliveInterval = 15 }
+auth.method = "token"
+auth.token = "qazwsx123.0"
+log.to = "/var/log/frp/frpc-ssh.log"
+log.level = "info"
+log.maxDays = 7
+
+# 稳连参数（frp 0.61.0 支持的格式）
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.tcpMux = true
 loginFailExit = false
-retry = { count = 0, interval = 3 }
 
 [[proxies]]
 name = "ssh_proxy_${SSH_PORT}"
@@ -224,18 +230,23 @@ else
     exit 1
 fi
 
-# CDN 配置（正确格式 + 稳连参数）
+# CDN 配置（正确格式 - 移除不支持的heartbeat字段）
 print_info "创建 CDN 配置文件..."
 sudo tee /etc/frp/vastaictcdn.toml > /dev/null << EOF
-# frp 0.61.0 正确配置格式 + 稳连参数
+# frp 0.61.0 正确配置格式
 serverAddr = "209.146.116.106"
 serverPort = 7000
-auth = { method = "token", token = "qazwsx123.0" }
-log = { to = "/var/log/frp/frpc-cdn.log", level = "info", disableColor = true }
-heartbeat = { interval = 10, timeout = 30 }
-transport = { tcpKeepAlive = true, tcpKeepAliveInterval = 15, tcpMux = true }
+auth.method = "token"
+auth.token = "qazwsx123.0"
+log.to = "/var/log/frp/frpc-cdn.log"
+log.level = "info"
+log.maxDays = 7
+
+# 稳连参数（frp 0.61.0 支持的格式）
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+transport.tcpMux = true
 loginFailExit = false
-retry = { count = 0, interval = 3 }
 EOF
 
 # 添加批量端口（名称：frp_port_端口号）
@@ -264,7 +275,7 @@ else
     exit 1
 fi
 
-# ==================== 第6步：创建 systemd 服务 ====================
+# ==================== 第6步：创建 systemd 服务（移除行尾注释） ====================
 print_step "6/8" "创建 systemd 服务"
 
 sudo tee /etc/systemd/system/frpc@.service > /dev/null << 'EOF'
@@ -277,8 +288,8 @@ Type=simple
 User=root
 ExecStart=/usr/local/bin/frpc -c /etc/frp/%i.toml
 Restart=always
-RestartSec=5  # 缩短重启间隔，更快恢复
-LimitNOFILE=1048576  # 增大文件句柄数，适配批量端口
+RestartSec=10
+LimitNOFILE=1048576
 StandardOutput=append:/var/log/frp/%i-service.log
 StandardError=append:/var/log/frp/%i-service.log
 
@@ -293,14 +304,13 @@ print_info "服务文件创建完成"
 print_step "7/8" "优化系统TCP参数（防止断连）"
 sudo tee -a /etc/sysctl.conf > /dev/null << EOF
 # FRPC 稳连优化参数
-net.ipv4.tcp_tw_recycle=0
 net.ipv4.tcp_tw_reuse=1
-net.ipv4.tcp_fin_timeout=60
-net.ipv4.tcp_keepalive_time=20
+net.ipv4.tcp_fin_timeout=30
+net.ipv4.tcp_keepalive_time=60
 net.ipv4.tcp_keepalive_intvl=10
 net.ipv4.tcp_keepalive_probes=3
 EOF
-sudo sysctl -p 2>/dev/null
+sudo sysctl -p 2>/dev/null || true
 print_info "TCP参数优化完成"
 
 # ==================== 第8步：启动服务并检查状态 ====================
@@ -308,11 +318,13 @@ print_step "8/8" "启动服务并检查状态"
 
 # 启动并设置开机自启
 echo "启动 SSH 客户端..."
-sudo systemctl enable --now frpc@vastaictssh.service
+sudo systemctl enable frpc@vastaictssh.service
+sudo systemctl start frpc@vastaictssh.service
 sleep 3
 
 echo "启动 CDN 客户端..."
-sudo systemctl enable --now frpc@vastaictcdn.service
+sudo systemctl enable frpc@vastaictcdn.service
+sudo systemctl start frpc@vastaictcdn.service
 sleep 5
 
 # 检查服务状态
@@ -322,8 +334,12 @@ echo "SSH 客户端状态:"
 ssh_active=$(systemctl is-active frpc@vastaictssh.service)
 if [ "$ssh_active" = "active" ]; then
     echo -e "  状态: ${GREEN}运行中 (active)${NC}"
+    echo "  最近日志:"
+    tail -2 /var/log/frp/frpc-ssh.log 2>/dev/null | sed 's/^/    /' || echo "    暂无日志"
 else
     echo -e "  状态: ${RED}异常 ($ssh_active)${NC}"
+    echo "  错误信息:"
+    journalctl -u frpc@vastaictssh.service -n 5 --no-pager | sed 's/^/    /'
 fi
 
 echo ""
@@ -331,36 +347,37 @@ echo "CDN 客户端状态:"
 cdn_active=$(systemctl is-active frpc@vastaictcdn.service)
 if [ "$cdn_active" = "active" ]; then
     echo -e "  状态: ${GREEN}运行中 (active)${NC}"
+    echo "  最近日志:"
+    tail -2 /var/log/frp/frpc-cdn.log 2>/dev/null | sed 's/^/    /' || echo "    暂无日志"
 else
     echo -e "  状态: ${RED}异常 ($cdn_active)${NC}"
+    echo "  错误信息:"
+    journalctl -u frpc@vastaictcdn.service -n 5 --no-pager | sed 's/^/    /'
 fi
 echo "----------------------------------------"
-
-# 查看最新日志
-echo ""
-print_info "最新日志："
-echo "SSH 日志:"
-[ -f /var/log/frp/frpc-ssh.log ] && tail -3 /var/log/frp/frpc-ssh.log 2>/dev/null | sed 's/^/  /' || echo "  暂无日志"
-echo ""
-echo "CDN 日志:"
-[ -f /var/log/frp/frpc-cdn.log ] && tail -3 /var/log/frp/frpc-cdn.log 2>/dev/null | sed 's/^/  /' || echo "  暂无日志"
 
 # ==================== 完成 ====================
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║                   安装完成！（稳定版）                       ║"
+echo "║                   安装完成！（最终修复版）                   ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 echo "核心优化："
-echo "  ✅ 配置文件适配 frp 0.61.0 正确格式"
-echo "  ✅ 内置10秒心跳+TCP保活，防止1分钟断连"
+echo "  ✅ 配置文件适配 frp 0.61.0 正确格式（移除不支持的heartbeat）"
+echo "  ✅ 内置30秒心跳+90秒超时，防止断连"
 echo "  ✅ 优化系统TCP参数，防静默断连"
 echo "  ✅ 增大文件句柄数，适配批量端口"
+echo "  ✅ 修复systemd服务文件注释问题"
+echo ""
+echo "配置文件位置："
+echo "  SSH: /etc/frp/vastaictssh.toml"
+echo "  CDN: /etc/frp/vastaictcdn.toml"
 echo ""
 echo "常用命令："
 echo "  查看状态: systemctl status frpc@vastaictssh.service frpc@vastaictcdn.service"
-echo "  实时监控: tail -f /var/log/frp/frpc-ssh.log /var/log/frp/frpc-cdn.log"
+echo "  查看日志: tail -f /var/log/frp/frpc-ssh.log /var/log/frp/frpc-cdn.log"
 echo "  重启服务: systemctl restart frpc@vastaictssh.service frpc@vastaictcdn.service"
+echo ""
 
 # 可选删除脚本
 SCRIPT_PATH="$(realpath "$0" 2>/dev/null)"
@@ -371,4 +388,4 @@ if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "/bin/bash" ]; then
     [[ "$DELETE_SCRIPT" =~ ^[Yy]$ ]] && rm -f "$SCRIPT_PATH" && print_info "安装脚本已删除"
 fi
 
-print_info "脚本执行完毕！服务已稳定运行，不会频繁掉线～"
+print_info "脚本执行完毕！"
