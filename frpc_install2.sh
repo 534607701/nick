@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Axis AI Deploy Script - 双服务器极简版
+# Axis AI Deploy Script - 双服务器极简版（解决频繁掉线）
 # 自动适配本机IP，无需手动修改
 
 # 颜色定义
@@ -11,17 +11,17 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo "════════════════════════════════════════════════════════════════════════"
-echo "                    ****隔壁老王**** 安装脚本"
+echo "                    ****隔壁老王**** 安装脚本（稳定版）"
 echo "════════════════════════════════════════════════════════════════════════"
 echo ""
 
-# 预设服务器配置（隐藏不显示）
+# 预设服务器配置
 SERVER1_IP="8.141.12.76"
 SERVER2_IP="209.146.116.106"
 SERVER_PORT=7000
 AUTH_TOKEN="qazwsx123.0"
 
-# 获取本机IP（自动适配）
+# 获取本机IP
 echo -n "正在检测本机IP... "
 LOCAL_IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n 1)
 
@@ -80,8 +80,10 @@ PROGRAM="$TARGET_DIR/vastaictcdn"
 mkdir -p "$TARGET_DIR" 2>/dev/null
 
 # 停止并禁用原有服务
-systemctl stop vastaictcdn frpc-ssh frpc-business 2>/dev/null
-systemctl disable vastaictcdn frpc-ssh frpc-business 2>/dev/null
+systemctl stop vastaictcdn frpc-ssh frpc-business frpc-monitor 2>/dev/null
+systemctl disable vastaictcdn frpc-ssh frpc-business frpc-monitor 2>/dev/null
+pkill -f "vastaictcdn"
+pkill -f "frpc-business"
 sleep 2
 
 # 检查FRP程序是否存在，如果不存在则下载
@@ -120,13 +122,20 @@ if [ ! -f "$PROGRAM" ]; then
     echo "完成"
 fi
 
-# 创建SSH配置文件（名称带端口号）
+# 创建SSH配置文件
 echo -n "生成SSH配置文件... "
 cat > /var/lib/vastai_kaalia/docker_tmp/frpc-ssh.toml << EOF
+# ========== SSH配置 ==========
 serverAddr = "$SERVER1_IP"
 serverPort = $SERVER_PORT
 auth.method = "token"
 auth.token = "$AUTH_TOKEN"
+
+# 性能优化
+transport.poolCount = 20
+transport.tcpMux = true
+heartbeat = 30
+heartbeatTimeout = 90
 
 [[proxies]]
 name = "ssh-${SSH_REMOTE_PORT}"
@@ -137,31 +146,40 @@ remotePort = $SSH_REMOTE_PORT
 EOF
 echo "完成"
 
-# 创建业务配置文件
+# 创建业务配置文件（带时间戳避免冲突）
 echo -n "生成业务配置文件（共$PORT_COUNT个端口）... "
+TIMESTAMP=$(date +%s)
 cat > /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml << EOF
+# ========== 业务配置 ==========
 serverAddr = "$SERVER2_IP"
 serverPort = $SERVER_PORT
 auth.method = "token"
 auth.token = "$AUTH_TOKEN"
 
+# ========== 性能优化（解决频繁掉线）==========
+transport.poolCount = 50          # 连接池大小，解决连接不足
+transport.tcpMux = true             # 启用TCP多路复用
+heartbeat = 45                      # 心跳间隔45秒
+heartbeatTimeout = 120              # 心跳超时120秒
+tcpKeepalive = 7200                 # TCP保持连接2小时
+
+# ========== 代理列表 ==========
 EOF
 
-# 批量添加端口
+# 批量添加端口（使用时间戳避免冲突）
 for port in $(seq $START_PORT $END_PORT); do
     cat >> /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml << EOF
 [[proxies]]
-name = "port-$port"
+name = "port-${TIMESTAMP}-${port}"
 type = "tcp"
 localIP = "$LOCAL_IP"
 localPort = $port
 remotePort = $port
-
 EOF
 done
 echo "完成"
 
-# 创建SSH服务（保持原有配置）
+# 创建SSH服务
 echo -n "创建系统服务... "
 cat > /etc/systemd/system/frpc-ssh.service << EOF
 [Unit]
@@ -180,10 +198,10 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
 
-# ========== 增强版业务服务配置（带多重自动重连）==========
+# ========== 优化版业务服务配置（降低重启频率）==========
 cat > /etc/systemd/system/frpc-business.service << 'EOF'
 [Unit]
-Description=FRP Business Client (Enhanced Auto-Restart)
+Description=FRP Business Client (Stable Version)
 After=network.target network-online.target
 Wants=network-online.target
 
@@ -195,24 +213,19 @@ WorkingDirectory=/var/lib/vastai_kaalia/docker_tmp
 # 主程序
 ExecStart=/var/lib/vastai_kaalia/docker_tmp/vastaictcdn -c /var/lib/vastai_kaalia/docker_tmp/frpc-business.toml
 
-# 自动重启配置（强化版）
-Restart=always
-RestartSec=5
-StartLimitBurst=10
-StartLimitIntervalSec=120
+# 自动重启配置（降低频率）
+Restart=on-failure
+RestartSec=30
+StartLimitBurst=5
+StartLimitIntervalSec=300
 
-# 进程看护 - 如果30秒无响应就重启
-WatchdogSec=30
-
-# 优雅停止超时
-TimeoutStopSec=30
+# 增加超时时间
+TimeoutStartSec=60
+TimeoutStopSec=60
 
 # 文件描述符限制
 LimitNOFILE=1048576
 LimitNPROC=512
-
-# 核心转储限制
-LimitCORE=infinity
 
 # 日志
 StandardOutput=journal
@@ -227,14 +240,14 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 EOF
 
-# 创建增强版健康检查脚本
+# ========== 优化版监控脚本（降低检查频率）==========
 cat > /usr/local/bin/frpc-business-monitor.sh << 'EOF'
 #!/bin/bash
 
 SERVICE="frpc-business"
 LOG_FILE="/var/log/frpc-monitor.log"
-CHECK_INTERVAL=60
-MAX_FAILS=3
+CHECK_INTERVAL=300                    # 5分钟检查一次
+MAX_FAILS=5                            # 允许5次失败才重启
 FAIL_COUNT=0
 
 log_msg() {
@@ -246,8 +259,7 @@ while true; do
     if ! systemctl is-active --quiet $SERVICE; then
         log_msg "服务未运行，尝试启动"
         systemctl start $SERVICE
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        sleep 10
+        sleep 30
         continue
     fi
     
@@ -256,14 +268,13 @@ while true; do
     if [ -z "$PID" ]; then
         log_msg "进程不存在，重启服务"
         systemctl restart $SERVICE
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        sleep 10
+        sleep 30
         continue
     fi
     
-    # 3. 检查最近日志中是否有成功代理
-    if ! journalctl -u $SERVICE -n 50 --no-pager 2>/dev/null | grep -q "start proxy success"; then
-        log_msg "最近无成功代理记录，可能连接异常"
+    # 3. 检查最近日志中是否有成功代理（放宽条件）
+    if ! journalctl -u $SERVICE -n 100 --no-pager 2>/dev/null | grep -q "start proxy success"; then
+        log_msg "最近无成功代理记录"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         
         if [ $FAIL_COUNT -ge $MAX_FAILS ]; then
@@ -272,7 +283,6 @@ while true; do
             FAIL_COUNT=0
         fi
     else
-        # 有成功记录，重置失败计数
         FAIL_COUNT=0
         log_msg "服务运行正常"
     fi
@@ -294,13 +304,13 @@ Type=simple
 User=root
 ExecStart=/usr/local/bin/frpc-business-monitor.sh
 Restart=always
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# 创建定时健康检查
+# 创建定时健康检查（延长间隔）
 cat > /etc/systemd/system/frpc-healthcheck.service << 'EOF'
 [Unit]
 Description=FRP Business Health Check
@@ -316,9 +326,9 @@ cat > /etc/systemd/system/frpc-healthcheck.timer << 'EOF'
 Description=FRP Business Health Check Timer
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=3min
-RandomizedDelaySec=10
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=30
 
 [Install]
 WantedBy=timers.target
@@ -338,10 +348,14 @@ sleep 3
 echo "完成"
 echo ""
 
-# 只显示简单的成功信息
+# 显示最终状态
 echo "════════════════════════════════════════════════════════════════════════"
 echo -e "                     ${GREEN}安装成功！${NC}"
 echo "════════════════════════════════════════════════════════════════════════"
+echo ""
+echo -e "${YELLOW}服务状态：${NC}"
+systemctl status frpc-ssh --no-pager | head -3
+systemctl status frpc-business --no-pager | head -3
 echo ""
 
 # 删除脚本自身
