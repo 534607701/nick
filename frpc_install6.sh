@@ -2,7 +2,7 @@
 
 # ==================================================
 # FRPC 多客户端安装脚本 - 完整集成版
-# 特性：安全查找清理 + 自动安装
+# 特性：安全查找清理 + 自动安装 + 修复损坏链接
 # ==================================================
 
 # 颜色定义
@@ -150,8 +150,20 @@ fi
 print_info "清理阶段完成"
 sleep 2
 
-# ==================== 第3步：检查并安装 frpc ====================
+# ==================== 第3步：检查并安装 frpc（修复版） ====================
 print_step "3/8" "检查 frpc 环境"
+
+# 检查是否存在损坏的符号链接
+if [ -L "/usr/local/bin/frpc" ]; then
+    print_warn "检测到损坏的符号链接 /usr/local/bin/frpc，正在删除..."
+    sudo rm -f /usr/local/bin/frpc
+fi
+
+# 如果文件存在但不是可执行文件，也删除
+if [ -f "/usr/local/bin/frpc" ] && [ ! -x "/usr/local/bin/frpc" ]; then
+    print_warn "检测到不可执行的 frpc 文件，正在删除..."
+    sudo rm -f /usr/local/bin/frpc
+fi
 
 if [ ! -f /usr/local/bin/frpc ]; then
     print_info "未找到 frpc，开始下载安装..."
@@ -194,8 +206,18 @@ if [ ! -f /usr/local/bin/frpc ]; then
     print_info "解压并安装 frpc..."
     tar -xzf "$DOWNLOAD_FILE"
     cd "frp_${FRP_VERSION}_linux_${ARCH_STR}"
-    sudo cp frpc /usr/local/bin/
+    
+    # 直接复制二进制文件（不使用 -f 强制复制）
+    sudo cp frpc /usr/local/bin/frpc
     sudo chmod +x /usr/local/bin/frpc
+    
+    # 验证安装
+    if [ -f /usr/local/bin/frpc ] && [ -x /usr/local/bin/frpc ]; then
+        print_info "frpc 安装成功"
+    else
+        print_error "frpc 安装失败"
+        exit 1
+    fi
     
     # 清理临时文件
     cd /tmp
@@ -204,7 +226,19 @@ if [ ! -f /usr/local/bin/frpc ]; then
     print_info "frpc 安装完成"
 else
     print_info "frpc 已存在: /usr/local/bin/frpc"
-    /usr/local/bin/frpc --version
+    # 显示版本
+    /usr/local/bin/frpc --version || {
+        print_error "frpc 存在但无法执行，尝试重新安装..."
+        sudo rm -f /usr/local/bin/frpc
+        # 重新运行本步骤
+        exec "$0"
+    }
+fi
+
+# 最后再验证一次
+if [ ! -f /usr/local/bin/frpc ] || [ ! -x /usr/local/bin/frpc ]; then
+    print_error "frpc 安装失败，请手动检查"
+    exit 1
 fi
 
 # ==================== 第4步：创建配置目录 ====================
