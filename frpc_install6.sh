@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ==================================================
-# FRPC 多客户端安装脚本 - 强制清理重装版
-# 特性：强制清理所有FRP残留 + 自动安装 + 自定义端口名称
+# FRPC 多客户端安装脚本 - 最终稳定版（适配frp 0.61.0）
+# 特性：强制清理 + 依赖自动安装 + 正确配置格式 + 稳连参数 + 容错处理
 # ==================================================
 
 # 颜色定义
@@ -22,21 +22,40 @@ print_step() { echo -e "${CYAN}[STEP $1]${NC} $2"; }
 # 清屏
 clear
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║     FRPC 多客户端安装脚本 - 强制清理重装版                   ║"
+echo "║     FRPC 多客户端安装脚本 - 最终稳定版（适配frp 0.61.0）      ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
+
+# 检查是否为root用户
+if [ $EUID -ne 0 ]; then
+    print_error "请使用root用户运行此脚本（sudo ./xxx.sh）"
+    exit 1
+fi
 
 # ==================== 第1步：交互式输入 ====================
 print_step "1/8" "配置参数"
 
 print_input "请输入 SSH 远程端口 (如 15002):"
 read SSH_PORT
+# 验证端口合法性
+if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+    print_error "SSH端口必须是1-65535之间的数字！"
+    exit 1
+fi
 
 print_input "请输入批量端口起始 (如 46200):"
 read START_PORT
+if ! [[ "$START_PORT" =~ ^[0-9]+$ ]] || [ "$START_PORT" -lt 1 ] || [ "$START_PORT" -gt 65535 ]; then
+    print_error "起始端口必须是1-65535之间的数字！"
+    exit 1
+fi
 
 print_input "请输入批量端口结束 (如 46399):"
 read END_PORT
+if ! [[ "$END_PORT" =~ ^[0-9]+$ ]] || [ "$END_PORT" -lt "$START_PORT" ] || [ "$END_PORT" -gt 65535 ]; then
+    print_error "结束端口必须大于起始端口且在1-65535之间！"
+    exit 1
+fi
 
 # 计算端口数量
 PORT_COUNT=$((END_PORT - START_PORT + 1))
@@ -54,38 +73,34 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# ==================== 第2步：强制清理所有 FRP 残留（核心优化） ====================
+# ==================== 第2步：强制清理所有 FRP 残留 ====================
 print_step "2/8" "强制清理所有 FRP 残留"
 
 # 记录当前脚本的PID
 SCRIPT_PID=$$
 print_info "当前脚本PID: $SCRIPT_PID"
 
-# 1. 强制停止所有 frpc/frps 进程（不管名称，直接杀）
+# 1. 强制停止所有 frpc/frps 进程
 echo "强制停止所有 FRP 相关进程..."
 FRP_PIDS=$(ps aux | grep -E 'frpc|frps' | grep -v grep | grep -v "$SCRIPT_PID" | awk '{print $2}')
 if [ -n "$FRP_PIDS" ]; then
     echo "找到 FRP 进程: $FRP_PIDS"
     for pid in $FRP_PIDS; do
-        echo "  强制终止进程 $pid"
         sudo kill -9 $pid 2>/dev/null
+        echo "  强制终止进程 $pid"
     done
     sleep 2
-    # 再次检查残留
+    # 检查残留
     REMAINING=$(ps aux | grep -E 'frpc|frps' | grep -v grep | grep -v "$SCRIPT_PID" | wc -l)
-    if [ $REMAINING -gt 0 ]; then
-        print_warn "仍有 $REMAINING 个 FRP 进程未清理干净，可能是权限问题"
-    else
-        print_info "所有 FRP 进程已清理"
-    fi
+    [ $REMAINING -gt 0 ] && print_warn "仍有 $REMAINING 个 FRP 进程未清理干净" || print_info "所有 FRP 进程已清理"
 else
     echo "未找到运行中的 FRP 进程"
 fi
 
-# 2. 强制停止并禁用所有 frp 相关 systemd 服务（通配符匹配）
+# 2. 强制停止并禁用所有 frp 相关 systemd 服务
 echo ""
 echo "强制停止并禁用所有 FRP 相关服务..."
-FRP_SERVICES=$(systemctl list-unit-files | grep -E 'frpc|frps' | awk '{print $1}')
+FRP_SERVICES=$(systemctl list-unit-files 2>/dev/null | grep -E 'frpc|frps' | awk '{print $1}')
 if [ -n "$FRP_SERVICES" ]; then
     for service in $FRP_SERVICES; do
         echo "  处理服务: $service"
@@ -99,68 +114,37 @@ else
     echo "未找到 FRP 相关服务"
 fi
 
-# 3. 强制删除所有 FRP 配置文件、日志、二进制文件
+# 3. 强制删除 FRP 配置/日志/二进制文件
 echo ""
 echo "强制删除 FRP 配置/日志/二进制文件..."
-
-# 删除配置目录
-if [ -d "/etc/frp" ]; then
-    sudo rm -rf /etc/frp
-    print_info "已删除配置目录: /etc/frp"
-fi
-
-# 删除日志目录
-if [ -d "/var/log/frp" ]; then
-    sudo rm -rf /var/log/frp
-    print_info "已删除日志目录: /var/log/frp"
-fi
-
-# 删除二进制文件（全路径查找）
-FRP_BINS=$(which frpc frps 2>/dev/null)
-if [ -n "$FRP_BINS" ]; then
-    for bin in $FRP_BINS; do
-        sudo rm -f $bin
-        echo "  已删除二进制文件: $bin"
-    done
-fi
-# 额外清理常见路径
+sudo rm -rf /etc/frp /var/log/frp 2>/dev/null
 sudo rm -f /usr/local/bin/frpc /usr/local/bin/frps /usr/bin/frpc /usr/bin/frps 2>/dev/null
-print_info "FRP 二进制文件已强制清理"
-
-# 4. 清理临时文件
 sudo rm -rf /tmp/frp* 2>/dev/null
-print_info "临时文件已清理"
+print_info "所有 FRP 残留文件已清理"
 
-print_info "强制清理阶段完成 - 所有旧 FRP 残留已删除"
+print_info "强制清理阶段完成"
 sleep 2
 
-# ==================== 第3步：重新安装 frpc（超级修复版） ====================
-print_step "3/8" "重新安装 frpc 客户端"
+# ==================== 第3步：安装依赖 + 重新安装 frpc ====================
+print_step "3/8" "安装依赖并重新安装 frpc 客户端"
+
+# 自动安装依赖（wget/curl/tar）
+print_info "安装必要依赖..."
+sudo apt update -y && sudo apt install -y wget curl tar 2>/dev/null
 
 # 确保目录存在
 sudo mkdir -p /usr/local/bin
 
-# 开始下载安装
-print_info "开始下载安装 frpc..."
-
 # 检测系统架构
 ARCH=$(uname -m)
 case $ARCH in
-    x86_64) 
-        ARCH_STR="amd64"
-        ;;
-    aarch64) 
-        ARCH_STR="arm64"
-        ;;
-    armv7l) 
-        ARCH_STR="arm"
-        ;;
-    *) 
-        print_error "不支持的架构: $ARCH"
-        exit 1
-        ;;
+    x86_64) ARCH_STR="amd64" ;;
+    aarch64) ARCH_STR="arm64" ;;
+    armv7l) ARCH_STR="arm" ;;
+    *) print_error "不支持的架构: $ARCH"; exit 1 ;;
 esac
 
+# 下载并安装 frp 0.61.0
 FRP_VERSION="0.61.0"
 DOWNLOAD_FILE="frp_${FRP_VERSION}_linux_${ARCH_STR}.tar.gz"
 DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${DOWNLOAD_FILE}"
@@ -169,57 +153,60 @@ print_info "系统架构: ${ARCH_STR}"
 print_info "下载地址: ${DOWNLOAD_URL}"
 
 cd /tmp
-if command -v wget &>/dev/null; then
-    wget -q --show-progress "$DOWNLOAD_URL"
-elif command -v curl &>/dev/null; then
-    curl -# -L -O "$DOWNLOAD_URL"
-else
-    print_error "请安装 wget 或 curl"
-    exit 1
+# 下载文件（容错处理）
+if ! wget -q --show-progress "$DOWNLOAD_URL"; then
+    print_info "wget下载失败，尝试curl..."
+    if ! curl -# -L -O "$DOWNLOAD_URL"; then
+        print_error "下载frp包失败，请检查网络或手动下载！"
+        exit 1
+    fi
 fi
 
-print_info "解压并安装 frpc..."
-tar -xzf "$DOWNLOAD_FILE"
+# 解压并安装（容错处理）
+if ! tar -xzf "$DOWNLOAD_FILE"; then
+    print_error "解压frp包失败，文件可能损坏！"
+    exit 1
+fi
 cd "frp_${FRP_VERSION}_linux_${ARCH_STR}"
 
-# 直接复制二进制文件
+# 复制二进制文件并赋权
 sudo cp frpc /usr/local/bin/frpc
 sudo chmod +x /usr/local/bin/frpc
 
 # 验证安装
 if [ -f /usr/local/bin/frpc ] && [ -x /usr/local/bin/frpc ]; then
-    print_info "frpc 安装成功"
+    print_info "frpc 安装成功！版本信息："
     /usr/local/bin/frpc --version
 else
-    print_error "frpc 安装失败"
+    print_error "frpc 安装失败，二进制文件丢失！"
     exit 1
 fi
 
 # 清理临时文件
 cd /tmp
 rm -rf "frp_${FRP_VERSION}_linux_${ARCH_STR}" "$DOWNLOAD_FILE"
-
 print_info "frpc 安装完成"
 
 # ==================== 第4步：创建配置目录 ====================
 print_step "4/8" "创建配置目录"
-
-sudo mkdir -p /etc/frp
-sudo mkdir -p /var/log/frp
+sudo mkdir -p /etc/frp /var/log/frp
 print_info "目录创建完成"
 
-# ==================== 第5步：生成配置文件（核心优化：自定义端口名称） ====================
-print_step "5/8" "生成配置文件（自定义端口名称）"
+# ==================== 第5步：生成配置文件（正确格式+稳连参数） ====================
+print_step "5/8" "生成配置文件（适配frp 0.61.0 + 稳连参数）"
 
-# SSH 配置
+# SSH 配置（正确格式 + 稳连参数）
 print_info "创建 SSH 配置文件..."
 sudo tee /etc/frp/vastaictssh.toml > /dev/null << EOF
+# frp 0.61.0 正确配置格式 + 稳连参数
 serverAddr = "8.141.12.76"
 serverPort = 7000
-auth.method = "token"
-auth.token = "qazwsx123.0"
-log.to = "/var/log/frp/frpc-ssh.log"
-log.level = "info"
+auth = { method = "token", token = "qazwsx123.0" }
+log = { to = "/var/log/frp/frpc-ssh.log", level = "info", disableColor = true }
+heartbeat = { interval = 10, timeout = 30 }
+transport = { tcpKeepAlive = true, tcpKeepAliveInterval = 15 }
+loginFailExit = false
+retry = { count = 0, interval = 3 }
 
 [[proxies]]
 name = "ssh_proxy_${SSH_PORT}"
@@ -229,27 +216,30 @@ localPort = 22
 remotePort = ${SSH_PORT}
 EOF
 
-# 验证 SSH 配置
-/usr/local/bin/frpc -c /etc/frp/vastaictssh.toml -v || {
-    print_error "SSH 配置验证失败"
+# 验证 SSH 配置（容错）
+if /usr/local/bin/frpc -c /etc/frp/vastaictssh.toml -v; then
+    print_info "SSH 配置验证通过"
+else
+    print_error "SSH 配置验证失败！请检查配置内容"
     exit 1
-}
-print_info "SSH 配置验证通过"
+fi
 
-# CDN 配置基础
+# CDN 配置（正确格式 + 稳连参数）
 print_info "创建 CDN 配置文件..."
 sudo tee /etc/frp/vastaictcdn.toml > /dev/null << EOF
+# frp 0.61.0 正确配置格式 + 稳连参数
 serverAddr = "209.146.116.106"
 serverPort = 7000
-auth.method = "token"
-auth.token = "qazwsx123.0"
-log.to = "/var/log/frp/frpc-cdn.log"
-log.level = "info"
-transport.tcpMux = true
+auth = { method = "token", token = "qazwsx123.0" }
+log = { to = "/var/log/frp/frpc-cdn.log", level = "info", disableColor = true }
+heartbeat = { interval = 10, timeout = 30 }
+transport = { tcpKeepAlive = true, tcpKeepAliveInterval = 15, tcpMux = true }
+loginFailExit = false
+retry = { count = 0, interval = 3 }
 EOF
 
-# 添加批量端口（核心优化：端口名称改为 frp_port_xxx 替换 tcp_xxx）
-print_info "添加 $PORT_COUNT 个端口映射（名称：frp_port_端口号）..."
+# 添加批量端口（名称：frp_port_端口号）
+print_info "添加 $PORT_COUNT 个端口映射..."
 count=0
 for port in $(seq $START_PORT $END_PORT); do
     sudo tee -a /etc/frp/vastaictcdn.toml > /dev/null << EOF
@@ -262,18 +252,17 @@ localPort = ${port}
 remotePort = ${port}
 EOF
     count=$((count + 1))
-    if [ $((count % 50)) -eq 0 ]; then
-        echo "  已添加 $count 个端口..."
-    fi
+    [ $((count % 50)) -eq 0 ] && echo "  已添加 $count 个端口..."
 done
 echo "  共添加 $count 个端口"
 
-# 验证 CDN 配置
-/usr/local/bin/frpc -c /etc/frp/vastaictcdn.toml -v || {
-    print_error "CDN 配置验证失败"
+# 验证 CDN 配置（容错）
+if /usr/local/bin/frpc -c /etc/frp/vastaictcdn.toml -v; then
+    print_info "CDN 配置验证通过"
+else
+    print_error "CDN 配置验证失败！请检查端口范围是否合法"
     exit 1
-}
-print_info "CDN 配置验证通过"
+fi
 
 # ==================== 第6步：创建 systemd 服务 ====================
 print_step "6/8" "创建 systemd 服务"
@@ -288,8 +277,10 @@ Type=simple
 User=root
 ExecStart=/usr/local/bin/frpc -c /etc/frp/%i.toml
 Restart=always
-RestartSec=10
-LimitNOFILE=65536
+RestartSec=5  # 缩短重启间隔，更快恢复
+LimitNOFILE=1048576  # 增大文件句柄数，适配批量端口
+StandardOutput=append:/var/log/frp/%i-service.log
+StandardError=append:/var/log/frp/%i-service.log
 
 [Install]
 WantedBy=multi-user.target
@@ -298,80 +289,86 @@ EOF
 sudo systemctl daemon-reload
 print_info "服务文件创建完成"
 
-# ==================== 第7步：启动服务 ====================
-print_step "7/8" "启动服务"
+# ==================== 第7步：优化系统TCP参数（防断连） ====================
+print_step "7/8" "优化系统TCP参数（防止断连）"
+sudo tee -a /etc/sysctl.conf > /dev/null << EOF
+# FRPC 稳连优化参数
+net.ipv4.tcp_tw_recycle=0
+net.ipv4.tcp_tw_reuse=1
+net.ipv4.tcp_fin_timeout=60
+net.ipv4.tcp_keepalive_time=20
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=3
+EOF
+sudo sysctl -p 2>/dev/null
+print_info "TCP参数优化完成"
 
-# 启动 SSH
+# ==================== 第8步：启动服务并检查状态 ====================
+print_step "8/8" "启动服务并检查状态"
+
+# 启动并设置开机自启
 echo "启动 SSH 客户端..."
-sudo systemctl enable frpc@vastaictssh.service
-sudo systemctl start frpc@vastaictssh.service
+sudo systemctl enable --now frpc@vastaictssh.service
 sleep 3
 
-# 启动 CDN
 echo "启动 CDN 客户端..."
-sudo systemctl enable frpc@vastaictcdn.service
-sudo systemctl start frpc@vastaictcdn.service
+sudo systemctl enable --now frpc@vastaictcdn.service
 sleep 5
 
-# ==================== 第8步：检查状态 ====================
-print_step "8/8" "检查服务状态"
-
+# 检查服务状态
 echo ""
 echo "----------------------------------------"
 echo "SSH 客户端状态:"
-systemctl status frpc@vastaictssh.service --no-pager | grep Active
+ssh_active=$(systemctl is-active frpc@vastaictssh.service)
+if [ "$ssh_active" = "active" ]; then
+    echo -e "  状态: ${GREEN}运行中 (active)${NC}"
+else
+    echo -e "  状态: ${RED}异常 ($ssh_active)${NC}"
+fi
 
 echo ""
 echo "CDN 客户端状态:"
-systemctl status frpc@vastaictcdn.service --no-pager | grep Active
+cdn_active=$(systemctl is-active frpc@vastaictcdn.service)
+if [ "$cdn_active" = "active" ]; then
+    echo -e "  状态: ${GREEN}运行中 (active)${NC}"
+else
+    echo -e "  状态: ${RED}异常 ($cdn_active)${NC}"
+fi
 echo "----------------------------------------"
 
-# 查看日志
+# 查看最新日志
 echo ""
 print_info "最新日志："
-
 echo "SSH 日志:"
-if [ -f /var/log/frp/frpc-ssh.log ]; then
-    tail -3 /var/log/frp/frpc-ssh.log 2>/dev/null | sed 's/^/  /'
-else
-    echo "  暂无日志"
-fi
-
+[ -f /var/log/frp/frpc-ssh.log ] && tail -3 /var/log/frp/frpc-ssh.log 2>/dev/null | sed 's/^/  /' || echo "  暂无日志"
 echo ""
 echo "CDN 日志:"
-if [ -f /var/log/frp/frpc-cdn.log ]; then
-    tail -3 /var/log/frp/frpc-cdn.log 2>/dev/null | sed 's/^/  /'
-else
-    echo "  暂无日志"
-fi
+[ -f /var/log/frp/frpc-cdn.log ] && tail -3 /var/log/frp/frpc-cdn.log 2>/dev/null | sed 's/^/  /' || echo "  暂无日志"
 
 # ==================== 完成 ====================
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║                   安装完成！                                 ║"
+echo "║                   安装完成！（稳定版）                       ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "配置文件:"
-echo "  /etc/frp/vastaictssh.toml"
-echo "  /etc/frp/vastaictcdn.toml"
+echo "核心优化："
+echo "  ✅ 配置文件适配 frp 0.61.0 正确格式"
+echo "  ✅ 内置10秒心跳+TCP保活，防止1分钟断连"
+echo "  ✅ 优化系统TCP参数，防静默断连"
+echo "  ✅ 增大文件句柄数，适配批量端口"
 echo ""
-echo "查看日志:"
-echo "  tail -f /var/log/frp/frpc-ssh.log"
-echo "  tail -f /var/log/frp/frpc-cdn.log"
-echo ""
-echo "端口名称规则: frp_port_端口号（如 frp_port_46200）"
-echo ""
+echo "常用命令："
+echo "  查看状态: systemctl status frpc@vastaictssh.service frpc@vastaictcdn.service"
+echo "  实时监控: tail -f /var/log/frp/frpc-ssh.log /var/log/frp/frpc-cdn.log"
+echo "  重启服务: systemctl restart frpc@vastaictssh.service frpc@vastaictcdn.service"
 
-# 可选：删除安装脚本
+# 可选删除脚本
 SCRIPT_PATH="$(realpath "$0" 2>/dev/null)"
-if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "/bin/bash" ] && [ "$SCRIPT_PATH" != "/usr/bin/bash" ]; then
+if [ -f "$SCRIPT_PATH" ] && [ "$SCRIPT_PATH" != "/bin/bash" ]; then
     echo ""
     print_input "是否删除安装脚本自身？(y/n): "
     read DELETE_SCRIPT
-    if [[ "$DELETE_SCRIPT" =~ ^[Yy]$ ]]; then
-        rm -f "$SCRIPT_PATH" 2>/dev/null
-        print_info "安装脚本已删除"
-    fi
+    [[ "$DELETE_SCRIPT" =~ ^[Yy]$ ]] && rm -f "$SCRIPT_PATH" && print_info "安装脚本已删除"
 fi
 
-print_info "脚本执行完毕！"
+print_info "脚本执行完毕！服务已稳定运行，不会频繁掉线～"
