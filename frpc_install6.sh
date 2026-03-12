@@ -234,8 +234,8 @@ fi
 print_info "创建 CDN 配置文件..."
 sudo tee /etc/frp/vastaictcdn.toml > /dev/null << EOF
 # frp 0.61.0 正确配置格式
-serverAddr = "209.146.116.106"
-serverPort = 7000
+serverAddr = "nick.dpdns.org"
+serverPort = 9999
 auth.method = "token"
 auth.token = "qazwsx123.0"
 log.to = "/var/log/frp/frpc-cdn.log"
@@ -268,7 +268,7 @@ done
 echo "  共添加 $count 个端口"
 
 # 验证 CDN 配置（容错）
-if /usr/local/bin/frpc -c /etc/frp/vastaictcdn.toml -v; then
+if /usr/local/bin/frpc verify -c /etc/frp/vastaictcdn.toml; then
     print_info "CDN 配置验证通过"
 else
     print_error "CDN 配置验证失败！请检查端口范围是否合法"
@@ -290,8 +290,6 @@ ExecStart=/usr/local/bin/frpc -c /etc/frp/%i.toml
 Restart=always
 RestartSec=10
 LimitNOFILE=1048576
-StandardOutput=append:/var/log/frp/%i-service.log
-StandardError=append:/var/log/frp/%i-service.log
 
 [Install]
 WantedBy=multi-user.target
