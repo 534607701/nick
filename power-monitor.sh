@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}   功耗采集服务安装脚本 v2.0${NC}"
+echo -e "${GREEN}   功耗采集服务安装脚本 v2.1 (CPU修正版)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -43,7 +43,7 @@ echo -e "${YELLOW}[1/3] 创建项目目录...${NC}"
 mkdir -p /root/power-monitor
 cd /root/power-monitor
 
-# 创建采集脚本
+# 创建采集脚本（修改了CPU功耗获取逻辑）
 echo -e "${YELLOW}[2/3] 创建采集脚本...${NC}"
 cat > power_collector.py << 'EOF'
 #!/usr/bin/env python3
@@ -54,11 +54,13 @@ import urllib.request
 import urllib.error
 import os
 import sys
+import re
 
 MACHINE_ID = os.environ.get('MACHINE_ID', '')
 SERVER_URL = "https://ruichuang.cloud/wp-json/my-devices/v1/power/update"
 
 def get_gpu_power():
+    """获取所有GPU功耗"""
     try:
         result = subprocess.run(
             ['nvidia-smi', '--query-gpu=index,power.draw,name,temperature.gpu,utilization.gpu', 
@@ -83,23 +85,53 @@ def get_gpu_power():
                         except:
                             continue
         return gpus
-    except:
+    except Exception as e:
+        print(f"GPU读取错误: {e}")
         return []
 
 def get_cpu_power():
+    """获取CPU功耗 - 修正版，正确读取PkgWatt"""
     try:
         result = subprocess.run(['sensors'], capture_output=True, text=True)
-        for line in result.stdout.split('\n'):
+        lines = result.stdout.split('\n')
+        
+        total_power = 0
+        package_count = 0
+        
+        # 查找所有PkgWatt行
+        for line in lines:
+            if 'PkgWatt' in line or 'Package id' in line:
+                # 提取数字
+                match = re.search(r'(\d+\.?\d*)\s*W', line)
+                if match:
+                    power = float(match.group(1))
+                    total_power += power
+                    package_count += 1
+                    print(f"  检测到CPU Package {package_count}: {power}W")
+        
+        if total_power > 0:
+            print(f"  CPU总功耗: {total_power}W")
+            return round(total_power, 2)
+        
+        # 如果没找到PkgWatt，尝试其他模式
+        for line in lines:
             if 'power' in line.lower() and 'w' in line.lower():
-                import re
                 match = re.search(r'(\d+\.?\d*)\s*W', line, re.IGNORECASE)
                 if match:
-                    return float(match.group(1))
-    except:
-        pass
-    return 145
+                    power = float(match.group(1))
+                    if power < 500:  # 合理的CPU功耗范围
+                        print(f"  检测到CPU功耗: {power}W")
+                        return power
+        
+        print("  未检测到CPU功耗数据，使用默认值 100W")
+        return 100  # 默认值
+        
+    except Exception as e:
+        print(f"  CPU读取错误: {e}")
+        return 100
 
 def collect_data():
+    """采集所有数据"""
     gpus = get_gpu_power()
     gpu_total = sum(g['power'] for g in gpus)
     cpu_power = get_cpu_power()
@@ -121,6 +153,7 @@ def collect_data():
     }
 
 def send_data():
+    """发送数据到服务器"""
     try:
         data = collect_data()
         print(f"\n[{time.strftime('%H:%M:%S')}] 采集数据:")
@@ -150,6 +183,7 @@ def send_data():
         print(f"  ❌ 错误: {e}")
 
 def main():
+    """主函数"""
     if not MACHINE_ID:
         print("❌ 错误: 未设置机器ID")
         sys.exit(1)
