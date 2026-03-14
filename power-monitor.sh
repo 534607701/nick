@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${GREEN}   功耗采集服务安装脚本 v2.1 (CPU修正版)${NC}"
+echo -e "${GREEN}   功耗采集服务安装脚本 v3.0 (整机功耗版)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -43,7 +43,7 @@ echo -e "${YELLOW}[1/3] 创建项目目录...${NC}"
 mkdir -p /root/power-monitor
 cd /root/power-monitor
 
-# 创建采集脚本（修改了CPU功耗获取逻辑）
+# 创建采集脚本（整机功耗版）
 echo -e "${YELLOW}[2/3] 创建采集脚本...${NC}"
 cat > power_collector.py << 'EOF'
 #!/usr/bin/env python3
@@ -89,64 +89,81 @@ def get_gpu_power():
         print(f"GPU读取错误: {e}")
         return []
 
-def get_cpu_power():
-    """获取CPU功耗 - 修正版，正确读取PkgWatt"""
+def get_total_power():
+    """从 power meter 读取整机功耗"""
     try:
         result = subprocess.run(['sensors'], capture_output=True, text=True)
         lines = result.stdout.split('\n')
         
-        total_power = 0
-        package_count = 0
+        # 查找 power_meter-acpi-0 下的 power1
+        for i, line in enumerate(lines):
+            if 'power_meter-acpi-0' in line:
+                if i + 1 < len(lines):
+                    power_line = lines[i + 1]
+                    match = re.search(r'power1:\s+(\d+\.?\d*)\s*W', power_line)
+                    if match:
+                        power = float(match.group(1))
+                        print(f"✅ 读取到整机功耗: {power}W")
+                        return power
         
-        # 查找所有PkgWatt行
+        # 如果没找到，尝试直接查找 power1:
         for line in lines:
-            if 'PkgWatt' in line or 'Package id' in line:
-                # 提取数字
+            if 'power1:' in line and 'W' in line:
                 match = re.search(r'(\d+\.?\d*)\s*W', line)
                 if match:
                     power = float(match.group(1))
-                    total_power += power
-                    package_count += 1
-                    print(f"  检测到CPU Package {package_count}: {power}W")
-        
-        if total_power > 0:
-            print(f"  CPU总功耗: {total_power}W")
-            return round(total_power, 2)
-        
-        # 如果没找到PkgWatt，尝试其他模式
-        for line in lines:
-            if 'power' in line.lower() and 'w' in line.lower():
-                match = re.search(r'(\d+\.?\d*)\s*W', line, re.IGNORECASE)
-                if match:
-                    power = float(match.group(1))
-                    if power < 500:  # 合理的CPU功耗范围
-                        print(f"  检测到CPU功耗: {power}W")
+                    if 50 < power < 5000:
+                        print(f"✅ 直接读取到整机功耗: {power}W")
                         return power
         
-        print("  未检测到CPU功耗数据，使用默认值 100W")
-        return 100  # 默认值
-        
+        print("⚠️ 未找到整机功耗数据")
+        return None
     except Exception as e:
-        print(f"  CPU读取错误: {e}")
-        return 100
+        print(f"读取整机功耗失败: {e}")
+        return None
 
 def collect_data():
-    """采集所有数据"""
+    """采集所有数据 - 总功耗减去GPU功耗 = CPU及其他功耗"""
+    # 1. 获取GPU数据
     gpus = get_gpu_power()
     gpu_total = sum(g['power'] for g in gpus)
-    cpu_power = get_cpu_power()
-    other_power = 50
-    total = gpu_total + cpu_power + other_power
+    
+    # 2. 获取整机总功耗
+    total_power = get_total_power()
+    
+    if total_power:
+        # 3. 计算CPU及其他功耗 = 总功耗 - GPU总功耗
+        cpu_other_power = total_power - gpu_total
+        
+        # 4. 合理性检查
+        if cpu_other_power < 10:
+            cpu_other_power = 50
+            total_power = gpu_total + cpu_other_power
+            print(f"⚠️ CPU功耗异常，调整为保底值: {cpu_other_power}W")
+        elif cpu_other_power > 1000:
+            cpu_other_power = 200
+            total_power = gpu_total + cpu_other_power
+            print(f"⚠️ CPU功耗过高，限制为: {cpu_other_power}W")
+        
+        print(f"\n📊 功耗计算:")
+        print(f"   整机总功耗: {total_power:.1f}W")
+        print(f"   GPU总功耗: {gpu_total:.1f}W")
+        print(f"   CPU+其他功耗: {cpu_other_power:.1f}W")
+    else:
+        # 如果没有整机功耗计，使用估算值
+        cpu_other_power = 150
+        total_power = gpu_total + cpu_other_power
+        print(f"\n⚠️ 无整机功耗计，使用估算值: CPU+其他 = {cpu_other_power}W")
     
     return {
         'machine_key': MACHINE_ID,
         'data': {
-            'total_power': round(total, 2),
-            'cpu_power': round(cpu_power, 2),
+            'total_power': round(total_power, 2),
+            'cpu_power': round(cpu_other_power, 2),  # CPU功耗实际是CPU+其他
             'gpu_count': len(gpus),
             'gpus': gpus,
             'gpu_total': round(gpu_total, 2),
-            'other_power': other_power,
+            'other_power': 0,  # 已经包含在 cpu_power 中
             'timestamp': int(time.time()),
             'datetime': time.strftime('%Y-%m-%d %H:%M:%S')
         }
@@ -159,7 +176,7 @@ def send_data():
         print(f"\n[{time.strftime('%H:%M:%S')}] 采集数据:")
         print(f"  GPU数量: {data['data']['gpu_count']}")
         print(f"  GPU总功耗: {data['data']['gpu_total']}W")
-        print(f"  CPU功耗: {data['data']['cpu_power']}W")
+        print(f"  CPU+其他功耗: {data['data']['cpu_power']}W")
         print(f"  总功耗: {data['data']['total_power']}W")
         
         json_data = json.dumps(data).encode('utf-8')
@@ -189,7 +206,7 @@ def main():
         sys.exit(1)
     
     print(f"\n{'='*50}")
-    print(f"🚀 功耗采集服务启动")
+    print(f"🚀 功耗采集服务启动 (整机功耗版)")
     print(f"{'='*50}")
     print(f"📌 机器ID: {MACHINE_ID}")
     print(f"🌐 服务器: {SERVER_URL}")
