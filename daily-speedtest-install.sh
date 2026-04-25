@@ -217,7 +217,7 @@ read -p "是否立即测试测速脚本？(y/N): " TEST_NOW
 if [[ "$TEST_NOW" =~ ^[Yy]$ ]]; then
     echo "正在执行测速测试..."
     echo "=== 测试开始 ==="
-    timeout 30 /bin/bash /opt/daily-scripts/replacez5_speedtest.sh
+    timeout 30 /bin/bash /opt/daily-scripts/replacez52_speedtest.sh
     echo "=== 测试结束 ==="
     echo "查看测试结果: tail -20 /var/log/speedtest/speedtest.log"
 fi
