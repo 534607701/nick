@@ -45,12 +45,12 @@ echo "✅ 目录创建完成"
 # 2. 下载测速脚本
 echo ""
 echo "2. 下载测速脚本..."
-if curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez5_speedtest.sh -o /opt/daily-scripts/replacez5_speedtest.sh; then
-    chmod +x /opt/daily-scripts/replacez5_speedtest.sh
+if curl -fsSL https://raw.githubusercontent.com/534607701/nick/main/replacez52_speedtest.sh -o /opt/daily-scripts/replacez52_speedtest.sh; then
+    chmod +x /opt/daily-scripts/replacez52_speedtest.sh
     echo "✅ 测速脚本下载完成"
 else
     echo "❌ 下载测速脚本失败，创建基本脚本..."
-    cat > /opt/daily-scripts/replacez5_speedtest.sh << 'BASIC_SCRIPT'
+    cat > /opt/daily-scripts/replacez52_speedtest.sh << 'BASIC_SCRIPT'
 #!/bin/bash
 echo "=== 网络测速开始: $(date '+%Y-%m-%d %H:%M:%S') ==="
 echo "正在检查网络连接..."
@@ -74,7 +74,7 @@ else
 fi
 echo "=== 测速结束: $(date '+%Y-%m-%d %H:%M:%S') ==="
 BASIC_SCRIPT
-    chmod +x /opt/daily-scripts/replacez5_speedtest.sh
+    chmod +x /opt/daily-scripts/replacez52_speedtest.sh
     echo "✅ 已创建基本测速脚本"
 fi
 
@@ -95,7 +95,7 @@ User=root
 ExecStartPre=/bin/bash -c "sleep $((RANDOM %% 300))"
 
 # 执行测速脚本
-ExecStart=/bin/bash /opt/daily-scripts/replacez5_speedtest.sh
+ExecStart=/bin/bash /opt/daily-scripts/replacez52_speedtest.sh
 
 # 标准输出重定向到文件
 StandardOutput=append:/var/log/speedtest/speedtest.log
@@ -191,7 +191,7 @@ echo "========================================"
 echo "安装完成！"
 echo "========================================"
 echo ""
-echo "📁 脚本位置: /opt/daily-scripts/replacez5_speedtest.sh"
+echo "📁 脚本位置: /opt/daily-scripts/replacez52_speedtest.sh"
 echo "📁 日志文件: /var/log/speedtest/speedtest.log"
 echo "⏰ 执行时间: 每天凌晨 3:00（随机延迟0-10分钟）"
 echo ""
@@ -202,7 +202,7 @@ echo "🕐 定时器列表:"
 systemctl list-timers --no-pager | grep -A1 -B1 daily-speedtest || echo "正在获取定时器信息..."
 echo ""
 echo "🔧 管理命令:"
-echo "   手动测试: sudo bash /opt/daily-scripts/replacez5_speedtest.sh"
+echo "   手动测试: sudo bash /opt/daily-scripts/replacez52_speedtest.sh"
 echo "   查看日志: sudo tail -f /var/log/speedtest/speedtest.log"
 echo "   服务日志: sudo journalctl -u daily-speedtest.service"
 echo "   定时器状态: sudo systemctl status daily-speedtest.timer"
