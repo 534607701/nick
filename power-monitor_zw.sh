@@ -27,16 +27,16 @@ done
 
 echo ""
 echo -e "${YELLOW}请选择服务器：${NC}"
-echo -e "  1) ${GREEN}旧服务器 (ruichuang.cloud)${NC}"
-echo -e "  2) ${GREEN}新服务器 (115.29.198.53)${NC}"
+echo -e "  1) ${GREEN}聚力服务器 (ruichuang.cloud)${NC}"
+echo -e "  2) ${GREEN}云通服务器 (wxytsl.com)${NC}"
 read -p "请选择 [1-2]: " SERVER_CHOICE
 
 if [[ "$SERVER_CHOICE" == "2" ]]; then
-    SERVER_URL="http://115.29.198.53/wp-json/my-devices/v1/power/update"
-    SERVER_NAME="新服务器 (115.29.198.53)"
+    SERVER_URL="https://wxytsl.com/wp-json/my-devices/v1/power/update"
+    SERVER_NAME="云通服务器 (wxytsl.com)"
 else
     SERVER_URL="https://ruichuang.cloud/wp-json/my-devices/v1/power/update"
-    SERVER_NAME="旧服务器 (ruichuang.cloud)"
+    SERVER_NAME="聚力服务器 (ruichuang.cloud)"
 fi
 
 echo ""
